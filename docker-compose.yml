@@ -1,0 +1,195 @@
+# Pin the project name so docker compose attaches to the existing volumes
+# regardless of which directory you run `docker compose up` from. Without
+# this, moving the repo would orphan the postgres-data volume and you'd
+# come back to an empty database.
+name: clartt-capital-platform
+
+services:
+  # --- Application Services ---
+
+  dashboard:
+    build:
+      context: ./packages/dashboard
+      dockerfile: Dockerfile
+    ports:
+      - "${DASHBOARD_PORT:-8080}:80"
+    depends_on:
+      - backend
+    networks:
+      - trading-net
+    restart: unless-stopped
+
+  backend:
+    build:
+      context: ./packages/backend
+      dockerfile: Dockerfile
+    ports:
+      - "${BACKEND_PORT:-3000}:3000"
+    environment:
+      - NODE_ENV=${NODE_ENV:-development}
+      - DATABASE_URL=postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+      - REDIS_URL=redis://redis:6379
+      - JWT_SECRET=${JWT_SECRET}
+      - JWT_REFRESH_SECRET=${JWT_REFRESH_SECRET}
+      - JWT_ACCESS_EXPIRY=${JWT_ACCESS_EXPIRY:-15m}
+      - JWT_REFRESH_EXPIRY=${JWT_REFRESH_EXPIRY:-7d}
+      - CB_FAILURE_THRESHOLD=${CB_FAILURE_THRESHOLD:-5}
+      - CB_RECOVERY_TIMEOUT_MS=${CB_RECOVERY_TIMEOUT_MS:-30000}
+      - CB_PROBE_INTERVAL_MS=${CB_PROBE_INTERVAL_MS:-10000}
+      - CONSUMER_LAG_ALERT_THRESHOLD=${CONSUMER_LAG_ALERT_THRESHOLD:-50}
+      - CONSUMER_LAG_POLL_INTERVAL_MS=${CONSUMER_LAG_POLL_INTERVAL_MS:-10000}
+      - BACKTEST_REQUEST_HIGH_WATER_MARK=${BACKTEST_REQUEST_HIGH_WATER_MARK:-10}
+      - EVENT_RETENTION_DAYS=${EVENT_RETENTION_DAYS:-90}
+      - EVENT_ARCHIVE_RETENTION_DAYS=${EVENT_ARCHIVE_RETENTION_DAYS:-365}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - trading-net
+    restart: unless-stopped
+
+  strategy-engine:
+    build:
+      context: ./packages/strategy-engine
+      dockerfile: Dockerfile
+    ports:
+      - "${STRATEGY_ENGINE_PORT:-8001}:8001"
+      - "${STRATEGY_ENGINE_API_PORT:-8003}:8003"
+    environment:
+      - REDIS_URL=redis://redis:6379
+      - BACKEND_URL=http://backend:3000
+      - API_PORT=8003
+      - STRATEGY_MODE=${STRATEGY_MODE:-live}
+      - LOG_LEVEL=${LOG_LEVEL:-info}
+      - SPREAD_THRESHOLD=${SPREAD_THRESHOLD:-5.0}
+      - VOLATILITY_MULTIPLIER=${VOLATILITY_MULTIPLIER:-2.0}
+      - SLIPPAGE_TOLERANCE=${SLIPPAGE_TOLERANCE:-3.0}
+      - CB_FAILURE_THRESHOLD=${CB_FAILURE_THRESHOLD:-5}
+      - CB_RECOVERY_TIMEOUT_MS=${CB_RECOVERY_TIMEOUT_MS:-30000}
+      - CB_PROBE_INTERVAL_MS=${CB_PROBE_INTERVAL_MS:-10000}
+      - BACKPRESSURE_HIGH_WATER_MARK=${BACKPRESSURE_HIGH_WATER_MARK:-100}
+      - BACKPRESSURE_LOW_WATER_MARK=${BACKPRESSURE_LOW_WATER_MARK:-20}
+      - SIGNAL_BUFFER_MAX_SIZE=${SIGNAL_BUFFER_MAX_SIZE:-500}
+      - BACKTEST_RESULT_HIGH_WATER_MARK=${BACKTEST_RESULT_HIGH_WATER_MARK:-50}
+    depends_on:
+      redis:
+        condition: service_healthy
+    networks:
+      - trading-net
+    restart: unless-stopped
+
+  execution-engine:
+    build:
+      context: ./packages/execution-engine
+      dockerfile: Dockerfile
+    ports:
+      - "${EXECUTION_ENGINE_PORT:-8002}:8002"
+    environment:
+      - REDIS_URL=redis://redis:6379
+      - DATABASE_URL=postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+      - METAAPI_TOKEN=${METAAPI_TOKEN:-}
+      - DERIV_APP_ID=${DERIV_APP_ID:-}
+      - DERIV_API_TOKEN=${DERIV_API_TOKEN:-}
+      - DERIV_TRADE_TOKEN=${DERIV_TRADE_TOKEN:-}
+      - DERIV_TRADE_LOGINID=${DERIV_TRADE_LOGINID:-}
+      - MAX_RISK_PER_TRADE=${MAX_RISK_PER_TRADE:-0.02}
+      - MAX_DAILY_LOSS=${MAX_DAILY_LOSS:-0.05}
+      - MAX_OPEN_POSITIONS=${MAX_OPEN_POSITIONS:-5}
+      - MAX_LOT_EXPOSURE=${MAX_LOT_EXPOSURE:-10.0}
+      - EXECUTION_LATENCY_THRESHOLD_MS=${EXECUTION_LATENCY_THRESHOLD_MS:-500}
+      - LOG_LEVEL=${LOG_LEVEL:-info}
+      - CB_FAILURE_THRESHOLD=${CB_FAILURE_THRESHOLD:-5}
+      - CB_RECOVERY_TIMEOUT_MS=${CB_RECOVERY_TIMEOUT_MS:-30000}
+      - CB_PROBE_INTERVAL_MS=${CB_PROBE_INTERVAL_MS:-10000}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - trading-net
+    restart: unless-stopped
+
+  # --- Data Layer ---
+
+  postgres:
+    image: postgres:16-alpine
+    ports:
+      - "${POSTGRES_PORT:-5433}:5432"
+    environment:
+      - POSTGRES_USER=${POSTGRES_USER:-trading}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-trading_secret}
+      - POSTGRES_DB=${POSTGRES_DB:-us30_trading}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-trading}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - trading-net
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "${REDIS_PORT:-6380}:6379"
+    command: redis-server --appendonly yes
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - trading-net
+    restart: unless-stopped
+
+  # --- Monitoring (disabled for now — uncomment when scaling up) ---
+
+  # prometheus:
+  #   image: prom/prometheus:v2.51.0
+  #   ports:
+  #     - "${PROMETHEUS_PORT:-9090}:9090"
+  #   volumes:
+  #     - ./infra/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
+  #     - ./infra/prometheus/alert_rules.yml:/etc/prometheus/alert_rules.yml
+  #     - prometheus-data:/prometheus
+  #   command:
+  #     - "--config.file=/etc/prometheus/prometheus.yml"
+  #     - "--storage.tsdb.retention.time=30d"
+  #   networks:
+  #     - trading-net
+  #   restart: unless-stopped
+
+  # grafana:
+  #   image: grafana/grafana:10.4.0
+  #   ports:
+  #     - "${GRAFANA_PORT:-3001}:3000"
+  #   environment:
+  #     - GF_SECURITY_ADMIN_USER=${GRAFANA_ADMIN_USER:-admin}
+  #     - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_ADMIN_PASSWORD:-admin}
+  #   volumes:
+  #     - ./infra/grafana/provisioning:/etc/grafana/provisioning
+  #     - ./infra/grafana/dashboards:/var/lib/grafana/dashboards
+  #     - grafana-data:/var/lib/grafana
+  #   depends_on:
+  #     - prometheus
+  #   networks:
+  #     - trading-net
+  #   restart: unless-stopped
+
+networks:
+  trading-net:
+    driver: bridge
+
+volumes:
+  postgres-data:
+  redis-data:
+  # Uncomment when re-enabling Prometheus & Grafana
+  # prometheus-data:
+  # grafana-data:

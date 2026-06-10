@@ -1,0 +1,78 @@
+:root {
+  /* Background — ultra-dark with subtle blue undertone */
+  --bg-primary: #06060a;
+  --bg-secondary: #0a0a10;
+  --bg-tertiary: #0e0e16;
+  --bg-surface: #13131d;
+  --bg-hover: #1a1a28;
+  --bg-card: rgba(13, 13, 20, 0.8);
+
+  /* Text — high contrast with subtle warmth */
+  --text-primary: #ededf5;
+  --text-secondary: #8888a0;
+  --text-muted: #4a4a62;
+
+  /* Borders — barely visible, glass-like */
+  --border-primary: rgba(255, 255, 255, 0.05);
+  --border-secondary: rgba(255, 255, 255, 0.025);
+  --border-glow: rgba(129, 140, 248, 0.15);
+
+  /* Accent — indigo/violet */
+  --accent: #818cf8;
+  --accent-hover: #a5b4fc;
+  --accent-dim: rgba(129, 140, 248, 0.1);
+  --accent-glow: rgba(129, 140, 248, 0.2);
+
+  /* Trading */
+  --success: #22d3a7;
+  --success-bg: rgba(34, 211, 167, 0.08);
+  --success-border: rgba(34, 211, 167, 0.15);
+  --danger: #ef6b6b;
+  --danger-bg: rgba(239, 107, 107, 0.08);
+  --danger-border: rgba(239, 107, 107, 0.15);
+  --warning: #f5c542;
+  --warning-bg: rgba(245, 197, 66, 0.08);
+
+  /* Chart */
+  --chart-bg: #06060a;
+  --chart-grid: #0e0e16;
+  --chart-crosshair: #4a4a62;
+  --chart-candle-up: #22d3a7;
+  --chart-candle-down: #ef6b6b;
+  --chart-volume: rgba(129, 140, 248, 0.15);
+
+  /* Order block overlay */
+  --ob-bullish: rgba(34, 211, 167, 0.06);
+  --ob-bearish: rgba(239, 107, 107, 0.06);
+
+  /* Spacing */
+  --sidebar-width: 200px;
+  --panel-width: 340px;
+  --header-height: 44px;
+
+  /* Typography */
+  --font-mono: 'JetBrains Mono', 'SF Mono', 'Fira Code', monospace;
+  --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+
+  /* Radius */
+  --radius-sm: 6px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+  --radius-xl: 16px;
+
+  /* Transitions */
+  --transition-fast: 150ms cubic-bezier(0.4, 0, 0.2, 1);
+  --transition-normal: 250ms cubic-bezier(0.4, 0, 0.2, 1);
+  --transition-slow: 400ms cubic-bezier(0.4, 0, 0.2, 1);
+
+  /* Glass — deeper, more premium */
+  --glass-bg: rgba(10, 10, 16, 0.8);
+  --glass-blur: 20px;
+  --glass-border: rgba(255, 255, 255, 0.04);
+
+  /* Shadows */
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.4);
+  --shadow-md: 0 4px 16px rgba(0, 0, 0, 0.5);
+  --shadow-lg: 0 8px 40px rgba(0, 0, 0, 0.6);
+  --shadow-glow: 0 0 24px rgba(129, 140, 248, 0.08);
+}
