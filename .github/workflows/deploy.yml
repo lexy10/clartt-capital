@@ -111,9 +111,45 @@ jobs:
     needs: build
     steps:
       - uses: actions/checkout@v4
+        with:
+          # Need history to diff which packages changed since the last deploy.
+          fetch-depth: 0
 
       - name: Lowercase owner
         run: echo "IMAGE_OWNER_LC=$(echo '${{ env.IMAGE_OWNER }}' | tr '[:upper:]' '[:lower:]')" >> "$GITHUB_ENV"
+
+      - name: Determine changed services
+        # Only restart the app services whose code actually changed — a
+        # dashboard tweak shouldn't bounce the execution engine (which drops
+        # engine-managed exit tracking for open positions). Data-layer and
+        # unchanged services keep running untouched.
+        #   ALL  = full deploy (infra/compose change, manual run, or first push)
+        #   NONE = nothing app-facing changed (e.g. docs) — skip the restart
+        #   else = space-separated list of changed services
+        run: |
+          BEFORE='${{ github.event.before }}'
+          AFTER='${{ github.sha }}'
+          if [ '${{ github.event_name }}' != 'push' ] || ! git cat-file -e "${BEFORE}^{commit}" 2>/dev/null; then
+            echo 'CHANGED_SERVICES=ALL' >> "$GITHUB_ENV"
+            echo 'Full deploy (manual run / first push / unknown base)'
+            exit 0
+          fi
+          FILES="$(git diff --name-only "${BEFORE}" "${AFTER}")"
+          echo "Changed files:"; echo "${FILES}" | sed 's/^/  /'
+          # Infra changes (compose, deploy scripts, workflow) → redeploy everything.
+          if echo "${FILES}" | grep -qE '^(docker-compose|deploy/|\.github/)'; then
+            echo 'CHANGED_SERVICES=ALL' >> "$GITHUB_ENV"
+            echo 'Infra change → full deploy'
+            exit 0
+          fi
+          SVCS=''
+          echo "${FILES}" | grep -q '^packages/backend/'          && SVCS="${SVCS} backend"
+          echo "${FILES}" | grep -q '^packages/dashboard/'        && SVCS="${SVCS} dashboard"
+          echo "${FILES}" | grep -q '^packages/strategy-engine/'  && SVCS="${SVCS} strategy-engine"
+          echo "${FILES}" | grep -q '^packages/execution-engine/' && SVCS="${SVCS} execution-engine"
+          SVCS="$(echo "${SVCS}" | xargs)"
+          echo "CHANGED_SERVICES=${SVCS:-NONE}" >> "$GITHUB_ENV"
+          echo "Services to restart: ${SVCS:-NONE}"
 
       - name: Set up SSH
         # Loads the private deploy key from secrets and trusts the VPS's
@@ -202,7 +238,31 @@ jobs:
               echo \"Database already has \$TABLES tables — skipping schema init\"
             fi
 
-            docker compose \$COMPOSE up -d --remove-orphans
+            # --- Scoped, health-gated restart ---
+            # Only recreate the services whose code changed. Unchanged services
+            # (and the whole data layer) keep running untouched — so a
+            # dashboard change never bounces the execution engine, and open
+            # positions keep their engine-managed exit tracking. --wait blocks
+            # until the recreated services pass their healthchecks, so a broken
+            # image fails the deploy instead of silently going down.
+            CHANGED='${{ env.CHANGED_SERVICES }}'
+            case \"\$CHANGED\" in
+              ALL)
+                echo 'Deploying ALL services'
+                docker compose \$COMPOSE up -d --wait --wait-timeout 120 --remove-orphans
+                ;;
+              NONE)
+                echo 'No app services changed — ensuring stack is up, no recreate'
+                docker compose \$COMPOSE up -d --no-recreate --remove-orphans
+                ;;
+              *)
+                echo \"Deploying only changed services: \$CHANGED\"
+                # Make sure everything exists/running (no recreate of unchanged),
+                # then recreate just the changed ones with health gating.
+                docker compose \$COMPOSE up -d --no-recreate --remove-orphans
+                docker compose \$COMPOSE up -d --wait --wait-timeout 120 \$CHANGED
+                ;;
+            esac
 
             # Prune dangling images — keeps the previous tag so rollback via
             # 'IMAGE_TAG=<prev-sha> docker compose up -d' still works.
