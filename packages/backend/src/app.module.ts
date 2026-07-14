@@ -40,14 +40,16 @@ import { Alert } from './modules/alerts/entities/alert.entity';
       isGlobal: true,
       envFilePath: ['.env'],
     }),
-    // Global rate limit: generous enough that the dashboard's polling never
-    // trips it (LiveDesk fires ~10 requests / 30s tick per open tab), but it
-    // stops runaway scripted abuse. Auth endpoints carry a much stricter
-    // per-route override (see auth.controller.ts) to block brute-force.
+    // Global rate limit, keyed on the real client IP (see the trust-proxy
+    // setup in main.ts — without it this would throttle ALL users as one).
+    // The dashboard is chatty: LiveDesk polls several endpoints every 30s and
+    // account_sync WebSocket events trigger refetches, so the per-user budget
+    // is generous. Auth endpoints carry a much stricter per-route override
+    // (see auth.controller.ts) to block brute-force.
     ThrottlerModule.forRoot([
       {
         ttl: 60_000,
-        limit: 300,
+        limit: 600,
       },
     ]),
     TypeOrmModule.forRootAsync({
