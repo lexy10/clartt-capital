@@ -44,14 +44,14 @@ export class UsersController {
 
   @Get()
   @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles('admin')
+  @Roles('superadmin')
   listAll() {
     return this.usersService.listAll();
   }
 
   @Get(':id')
   @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles('admin')
+  @Roles('superadmin')
   getById(@Param('id') id: string) {
     return this.usersService.getById(id);
   }
@@ -60,28 +60,28 @@ export class UsersController {
 
   @Post()
   @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles('admin')
+  @Roles('superadmin')
   createUser(@Body() dto: CreateUserDto) {
     return this.usersService.createUser(dto.email, dto.password, dto.role);
   }
 
   @Patch(':id/role')
   @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles('admin')
+  @Roles('superadmin')
   updateRole(@Request() req: any, @Param('id', ParseUUIDPipe) id: string, @Body() dto: UpdateRoleDto) {
     return this.usersService.updateRole(req.user.id, id, dto.role);
   }
 
   @Patch(':id/active')
   @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles('admin')
+  @Roles('superadmin')
   setActive(@Request() req: any, @Param('id', ParseUUIDPipe) id: string, @Body() dto: SetActiveDto) {
     return this.usersService.setActive(req.user.id, id, dto.isActive);
   }
 
   @Patch(':id/password')
   @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles('admin')
+  @Roles('superadmin')
   @HttpCode(HttpStatus.NO_CONTENT)
   async resetPassword(@Param('id', ParseUUIDPipe) id: string, @Body() dto: ResetPasswordDto) {
     await this.usersService.resetPassword(id, dto.password);

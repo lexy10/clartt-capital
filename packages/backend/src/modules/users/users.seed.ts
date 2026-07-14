@@ -13,7 +13,7 @@ const BCRYPT_ROUNDS = 10;
  * in. This seeds exactly one admin from ADMIN_EMAIL / ADMIN_PASSWORD.
  *
  * Behaviour:
- *  - If ANY admin already exists, do nothing (never touch existing users).
+ *  - If ANY superadmin already exists, do nothing (never touch existing users).
  *  - If ADMIN_EMAIL / ADMIN_PASSWORD are unset, log a warning and skip —
  *    the operator must set them (or restore a dump) to get in.
  *  - The password is bcrypt-hashed; the plaintext never lands in the DB.
@@ -23,8 +23,8 @@ const BCRYPT_ROUNDS = 10;
 export async function seedAdminUser(userRepo: Repository<User>): Promise<void> {
   const logger = new Logger('UsersSeed');
 
-  const existingAdmin = await userRepo.findOne({ where: { role: 'admin' } });
-  if (existingAdmin) {
+  const existingSuperadmin = await userRepo.findOne({ where: { role: 'superadmin' } });
+  if (existingSuperadmin) {
     return;
   }
 
@@ -47,6 +47,6 @@ export async function seedAdminUser(userRepo: Repository<User>): Promise<void> {
   }
 
   const passwordHash = await bcrypt.hash(password, BCRYPT_ROUNDS);
-  await userRepo.save(userRepo.create({ email, passwordHash, role: 'admin' }));
-  logger.log(`Bootstrapped admin user ${email}. Change this password after first login.`);
+  await userRepo.save(userRepo.create({ email, passwordHash, role: 'superadmin' }));
+  logger.log(`Bootstrapped superadmin user ${email}. Change this password after first login.`);
 }

@@ -22,7 +22,8 @@ const UserSwitcher: FC = () => {
   const viewingAsUserId = useAuthStore((s) => s.viewingAsUserId);
   const setViewingAsUserId = useAuthStore((s) => s.setViewingAsUserId);
 
-  if (!currentUser || currentUser.role !== 'admin' || allUsers.length === 0) {
+  // Impersonation ("Viewing as") is a super-admin-only power.
+  if (!currentUser || currentUser.role !== 'superadmin' || allUsers.length === 0) {
     return null;
   }
 
@@ -83,7 +84,7 @@ const UserSwitcher: FC = () => {
           const label = emailToName(u.email);
           return (
             <option key={u.id} value={u.id}>
-              {label}{isYou ? ' (you)' : ''}{u.role === 'admin' && !isYou ? ' · admin' : ''}
+              {label}{isYou ? ' (you)' : ''}{!isYou && u.role !== 'trader' ? ` · ${u.role}` : ''}
             </option>
           );
         })}

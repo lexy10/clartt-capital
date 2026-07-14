@@ -3,7 +3,7 @@ import { apiClient } from '../services/ApiClient';
 import { useAuthStore } from '../stores/authStore';
 import type { AdminUser } from '../types/api';
 
-const ROLES = ['admin', 'trader'] as const;
+const ROLES = ['superadmin', 'admin', 'trader'] as const;
 
 function emailToName(email: string): string {
   const local = (email.split('@')[0] || email).trim();

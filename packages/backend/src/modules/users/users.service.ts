@@ -5,8 +5,10 @@ import * as bcrypt from 'bcrypt';
 import { User } from '../auth/entities/user.entity';
 import { UpdateUserDto } from './dto/update-user.dto';
 
-/** Roles the platform recognises. Keep in sync with RolesGuard usage. */
-export const VALID_ROLES = ['admin', 'trader'] as const;
+/** Roles the platform recognises, highest first. Keep in sync with the
+ *  RolesGuard rank map. superadmin: full control incl. user management +
+ *  impersonation. admin: ops/config pages. trader: own accounts only. */
+export const VALID_ROLES = ['superadmin', 'admin', 'trader'] as const;
 export type UserRole = (typeof VALID_ROLES)[number];
 const BCRYPT_ROUNDS = 10;
 
@@ -96,9 +98,9 @@ export class UsersService {
   async updateRole(actorId: string, targetId: string, role: string): Promise<AdminUserView> {
     this.assertValidRole(role);
     const user = await this.findOrThrow(targetId);
-    // Prevent an admin from demoting themselves out of admin (self-lockout).
-    if (actorId === targetId && user.role === 'admin' && role !== 'admin') {
-      throw new BadRequestException("You can't remove your own admin role");
+    // Prevent a superadmin from demoting themselves (self-lockout).
+    if (actorId === targetId && user.role === 'superadmin' && role !== 'superadmin') {
+      throw new BadRequestException("You can't remove your own super-admin role");
     }
     user.role = role;
     return this.toView(await this.usersRepository.save(user));

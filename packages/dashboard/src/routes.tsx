@@ -1,7 +1,7 @@
 import { createBrowserRouter, Navigate } from 'react-router-dom';
 import { lazy, Suspense, type ComponentType } from 'react';
 import AuthGuard from './components/AuthGuard';
-import AdminRoute from './components/AdminRoute';
+import AdminRoute, { SuperAdminRoute } from './components/AdminRoute';
 import LayoutShell from './components/LayoutShell';
 import LoadingFallback from './components/LoadingFallback';
 
@@ -57,10 +57,16 @@ export const router = createBrowserRouter([
           { path: 'profile', element: withSuspense(ProfilePage) },
           // System pages are admin-only. The AdminRoute guard hard-bounces
           // non-admins back to "/" even if they hit the URLs directly.
+          // User management is super-admin only; the ops pages are admin+.
+          {
+            element: <SuperAdminRoute />,
+            children: [
+              { path: 'admin/users', element: withSuspense(UsersPage) },
+            ],
+          },
           {
             element: <AdminRoute />,
             children: [
-              { path: 'admin/users', element: withSuspense(UsersPage) },
               { path: 'health', element: withSuspense(SystemHealthPanel) },
               { path: 'agents', element: withSuspense(AgentsPage) },
             ],

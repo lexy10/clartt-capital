@@ -45,7 +45,7 @@ export class EffectiveUserInterceptor implements NestInterceptor {
     const asUserId = Array.isArray(rawParam) ? rawParam[0] : rawParam;
 
     if (user && typeof asUserId === 'string' && asUserId.length > 0) {
-      if (user.role === 'admin' && asUserId !== user.id) {
+      if (user.role === 'superadmin' && asUserId !== user.id) {
         // Preserve the real id for audit, then rewrite to the impersonated id.
         req.actualUserId = user.id;
         // We mutate the existing object so any downstream code that holds

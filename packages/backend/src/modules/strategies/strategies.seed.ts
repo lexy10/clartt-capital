@@ -23,7 +23,10 @@ export async function seedStrategies(
 ): Promise<void> {
   const logger = new Logger('StrategiesSeed');
 
-  const admin = await userRepo.findOne({ where: { role: 'admin' } });
+  // Prefer the superadmin (the platform owner); fall back to any admin.
+  const admin =
+    (await userRepo.findOne({ where: { role: 'superadmin' } })) ??
+    (await userRepo.findOne({ where: { role: 'admin' } }));
   const createdBy = admin?.id ?? null;
 
   let created = 0;

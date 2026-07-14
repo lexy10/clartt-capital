@@ -24,7 +24,14 @@ export class RolesGuard implements CanActivate {
       throw new ForbiddenException('Access denied');
     }
 
-    if (!requiredRoles.includes(user.role)) {
+    // Role hierarchy: a higher rank satisfies any lower-or-equal requirement.
+    // So @Roles('admin') is satisfied by both 'admin' and 'superadmin', while
+    // @Roles('superadmin') is satisfied only by 'superadmin'.
+    const rank: Record<string, number> = { trader: 1, admin: 2, superadmin: 3 };
+    const userRank = rank[user.role] ?? 0;
+    const requiredRank = Math.min(...requiredRoles.map((r) => rank[r] ?? Infinity));
+
+    if (userRank < requiredRank) {
       throw new ForbiddenException('Insufficient role');
     }
 

@@ -2,29 +2,30 @@ import { Navigate, Outlet } from 'react-router-dom';
 import { useAuthStore } from '../stores/authStore';
 
 /**
- * Route guard for admin-only pages (System Health, Agents).
+ * Route guards keyed on role.
  *
- * Behavior:
- *   - Wait for currentUser to load (renders nothing while pending — the auth
- *     guard already proved the token is valid).
- *   - Once loaded, admin → render the page; non-admin → redirect to Live Desk.
+ * AdminRoute       → admin OR superadmin (ops pages: System Health, Agents).
+ * SuperAdminRoute  → superadmin only (User Management).
  *
- * Pair with the Sidebar's `adminOnly` flag (which hides the nav items) for
- * defense in depth: nav links don't render, AND direct URL navigation still
- * bounces non-admins back to safety.
+ * Wait for currentUser to load (render nothing while pending — the auth guard
+ * already proved the token is valid), then allow or bounce to Live Desk.
+ * Pairs with the Sidebar's `adminOnly` / `superAdminOnly` flags (which hide
+ * the nav) for defense in depth against direct URL navigation.
  */
 export default function AdminRoute() {
   const currentUser = useAuthStore((s) => s.currentUser);
-
-  // Still loading the user profile — show nothing rather than flashing the
-  // page contents for a frame.
-  if (currentUser === null) {
-    return null;
-  }
-
-  if (currentUser.role !== 'admin') {
+  if (currentUser === null) return null;
+  if (currentUser.role !== 'admin' && currentUser.role !== 'superadmin') {
     return <Navigate to="/" replace />;
   }
+  return <Outlet />;
+}
 
+export function SuperAdminRoute() {
+  const currentUser = useAuthStore((s) => s.currentUser);
+  if (currentUser === null) return null;
+  if (currentUser.role !== 'superadmin') {
+    return <Navigate to="/" replace />;
+  }
   return <Outlet />;
 }

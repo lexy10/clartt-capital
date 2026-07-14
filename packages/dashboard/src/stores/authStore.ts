@@ -84,8 +84,9 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     try {
       const me = await apiClient.users.me();
       set({ currentUser: me });
-      // Admins additionally pull the user list for the switcher.
-      if (me.role === 'admin') {
+      // Only the super admin pulls the user list (for the switcher + user
+      // management); listAll is super-admin-gated on the backend.
+      if (me.role === 'superadmin') {
         try {
           const all = await apiClient.users.listAll();
           set({ allUsers: all });

@@ -144,6 +144,7 @@ const navSections = [
         id: 'users',
         path: ROUTES.USERS,
         label: 'Users',
+        superAdminOnly: true,
         icon: (
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
             <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
@@ -182,11 +183,18 @@ const navSections = [
 const Sidebar: FC = () => {
   const logout = useAuthStore((s) => s.logout);
   const currentUser = useAuthStore((s) => s.currentUser);
-  const isAdmin = currentUser?.role === 'admin';
+  const isSuperAdmin = currentUser?.role === 'superadmin';
+  const isAdminOrAbove = currentUser?.role === 'admin' || isSuperAdmin;
 
-  // Hide entire sections marked adminOnly when the viewer isn't an admin.
-  // System Health and Agents are debugging/ops pages — traders shouldn't see them.
-  const visibleSections = navSections.filter((s) => !s.adminOnly || isAdmin);
+  // Hide adminOnly sections from traders, then hide superAdminOnly items
+  // (e.g. Users) from non-super-admins within otherwise-visible sections.
+  const visibleSections = navSections
+    .filter((s) => !s.adminOnly || isAdminOrAbove)
+    .map((s) => ({
+      ...s,
+      items: s.items.filter((it) => !(it as { superAdminOnly?: boolean }).superAdminOnly || isSuperAdmin),
+    }))
+    .filter((s) => s.items.length > 0);
 
   return (
     <nav className="sidebar-nav" role="navigation" aria-label="Main navigation">

@@ -23,7 +23,7 @@ const UserGreeting: FC = () => {
 
   if (!currentUser) return null;
 
-  const isAdmin = currentUser.role === 'admin';
+  const isAdmin = currentUser.role === 'admin' || currentUser.role === 'superadmin';
 
   return (
     <Link
