@@ -170,7 +170,19 @@ jobs:
             # Authenticate the VPS's docker to GHCR (short-lived run token).
             echo '${{ secrets.GITHUB_TOKEN }}' | docker login ghcr.io -u '${{ github.actor }}' --password-stdin
 
-            docker compose \$COMPOSE pull
+            # Pull with retries — Contabo's IPv6 path to ghcr.io's CDN can reset
+            # mid-transfer. Each retry resumes already-downloaded layers, so a
+            # reset just costs one more attempt rather than a full re-pull.
+            pull_ok=0
+            for attempt in \$(seq 1 6); do
+              if docker compose \$COMPOSE pull; then pull_ok=1; break; fi
+              echo \"pull attempt \$attempt failed (network reset?); retrying in 15s\"
+              sleep 15
+            done
+            if [ \"\$pull_ok\" != 1 ]; then
+              echo 'Image pull failed after 6 attempts — likely a GHCR/network issue, not a build failure. Re-run the workflow.'
+              exit 1
+            fi
 
             # --- Self-bootstrapping DB (idempotent) ---
             # Bring up the data layer first; if the DB is empty (first ever
