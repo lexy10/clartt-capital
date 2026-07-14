@@ -105,7 +105,7 @@ const AccountsPage: FC = () => {
 
       {!loading && activeAccounts.length === 0 && (
         <p style={{ fontSize: '13px', color: 'var(--text-muted)', textAlign: 'center', marginTop: '40px' }}>
-          No accounts connected. Add your first MT5 account.
+          No accounts connected. Add your first Deriv or MT5 account.
         </p>
       )}
 

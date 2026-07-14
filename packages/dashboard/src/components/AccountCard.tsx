@@ -22,7 +22,7 @@ const AccountCard: FC<AccountCardProps> = ({ account }) => {
   const { strategies, fetchStrategies } = useStrategyStore();
 
   const [editing, setEditing] = useState(false);
-  const [labelDraft, setLabelDraft] = useState(account.label || account.mt5Login || 'Account');
+  const [labelDraft, setLabelDraft] = useState(account.label || account.mt5Login || account.derivLoginId || 'Account');
   const [connectionStatus, setConnectionStatus] = useState<ConnectionStatus>('loading');
   const [confirmingRemove, setConfirmingRemove] = useState(false);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
@@ -104,7 +104,10 @@ const AccountCard: FC<AccountCardProps> = ({ account }) => {
     }
   }, [editing]);
 
-  const displayLabel = account.label || account.mt5Login || 'Account';
+  const displayLabel = account.label || account.mt5Login || account.derivLoginId || 'Account';
+  const isDeriv = account.brokerProvider === 'deriv';
+  const brokerBadge = isDeriv ? 'Deriv' : account.brokerProvider === 'metaapi' || account.mt5Login ? 'MT5' : (account.brokerProvider || '').toUpperCase();
+  const accountIdentifier = isDeriv ? account.derivLoginId : account.mt5Login;
 
   const commitLabel = () => {
     setEditing(false);
@@ -226,8 +229,16 @@ const AccountCard: FC<AccountCardProps> = ({ account }) => {
               {displayLabel}
             </span>
           )}
-          {account.mt5Login && (
-            <span style={loginTagStyle}>{account.mt5Login}</span>
+          {brokerBadge && (
+            <span style={{
+              ...loginTagStyle,
+              background: isDeriv ? 'var(--accent-dim)' : 'var(--bg-surface)',
+              color: isDeriv ? 'var(--accent)' : 'var(--text-muted)',
+              borderColor: isDeriv ? 'var(--border-glow)' : 'var(--glass-border)',
+            }}>{brokerBadge}</span>
+          )}
+          {accountIdentifier && (
+            <span style={loginTagStyle}>{accountIdentifier}</span>
           )}
         </div>
         <span className={statusConfig.className} style={statusConfig.pulse ? { opacity: 0.7 } : undefined}>
@@ -236,7 +247,7 @@ const AccountCard: FC<AccountCardProps> = ({ account }) => {
         </span>
       </div>
 
-      {/* Server info */}
+      {/* Server info (MT5 only) */}
       {account.mt5Server && (
         <div style={serverRowStyle}>
           <span style={serverLabelStyle}>Server</span>
@@ -499,6 +510,11 @@ const loginTagStyle: React.CSSProperties = {
   fontFamily: 'var(--font-mono)',
   color: 'var(--text-muted)',
   letterSpacing: '0.3px',
+  padding: '1px 6px',
+  borderRadius: 4,
+  border: '1px solid var(--glass-border)',
+  background: 'var(--bg-surface)',
+  whiteSpace: 'nowrap',
 };
 
 const dotStyle: React.CSSProperties = {

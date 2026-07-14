@@ -17,10 +17,17 @@ const AddAccountForm: FC<AddAccountFormProps> = ({ onClose, onDeployingChange })
   const { strategies, fetchStrategies, loading: strategiesLoading } = useStrategyStore();
 
   const [step, setStep] = useState<Step>('credentials');
+  // Which broker flow — Deriv-direct (synthetics) or MetaAPI/MT5.
+  const [brokerType, setBrokerType] = useState<'deriv' | 'metaapi'>('deriv');
+  const [accountKind, setAccountKind] = useState<'personal' | 'demo' | 'prop'>('personal');
+  // MetaAPI / MT5 fields
   const [login, setLogin] = useState('');
   const [password, setPassword] = useState('');
   const [serverName, setServerName] = useState('');
   const [platform, setPlatform] = useState<'mt5' | 'mt4'>('mt5');
+  // Deriv fields
+  const [derivApiToken, setDerivApiToken] = useState('');
+  const [derivLoginId, setDerivLoginId] = useState('');
   const [label, setLabel] = useState('');
   const [formError, setFormError] = useState<string | null>(null);
   const [deployStatus, setDeployStatus] = useState('');
@@ -42,25 +49,47 @@ const AddAccountForm: FC<AddAccountFormProps> = ({ onClose, onDeployingChange })
   const handleSubmitCredentials = async (e: FormEvent) => {
     e.preventDefault();
     setFormError(null);
-    if (!login.trim() || !password || !serverName.trim()) {
-      setFormError('Login, password, and server name are required.');
-      return;
+
+    // Validate + build the DTO per broker flow.
+    let dto: CreateAccountDto;
+    if (brokerType === 'deriv') {
+      if (!derivApiToken.trim() || !derivLoginId.trim()) {
+        setFormError('Deriv API token and login ID are required.');
+        return;
+      }
+      dto = {
+        brokerProvider: 'deriv',
+        derivApiToken: derivApiToken.trim(),
+        derivLoginId: derivLoginId.trim(),
+        accountKind,
+        ...(label.trim() ? { label: label.trim() } : {}),
+      };
+    } else {
+      if (!login.trim() || !password || !serverName.trim()) {
+        setFormError('Login, password, and server name are required.');
+        return;
+      }
+      dto = {
+        brokerProvider: 'metaapi',
+        login: login.trim(), password, serverName: serverName.trim(), platform,
+        accountKind,
+        ...(label.trim() ? { label: label.trim() } : {}),
+      };
     }
-    const dto: CreateAccountDto = {
-      login: login.trim(), password, serverName: serverName.trim(), platform,
-      ...(label.trim() ? { label: label.trim() } : {}),
-    };
+
     setStep('deploying');
     onDeployingChange?.(true);
     setDeployStatus('Sending credentials to server…');
     await new Promise((r) => setTimeout(r, 600));
-    setDeployStatus('Creating MetaAPI account…');
+    setDeployStatus(brokerType === 'deriv' ? 'Connecting to Deriv…' : 'Creating MetaAPI account…');
     await addAccount(dto);
     const storeError = useAccountStore.getState().error;
     if (storeError) { setFormError(storeError); setStep('credentials'); onDeployingChange?.(false); return; }
-    setDeployStatus('Deploying account to broker…');
+    setDeployStatus(brokerType === 'deriv' ? 'Authorizing Deriv token…' : 'Deploying account to broker…');
     const accounts = useAccountStore.getState().accounts;
-    const created = accounts.find((a) => a.mt5Login === login.trim() && a.mt5Server === serverName.trim());
+    const created = brokerType === 'deriv'
+      ? accounts.find((a) => a.derivLoginId === derivLoginId.trim())
+      : accounts.find((a) => a.mt5Login === login.trim() && a.mt5Server === serverName.trim());
     if (!created) { setFormError('Account created but could not be found.'); setStep('credentials'); onDeployingChange?.(false); return; }
     setCreatedAccountId(created.id);
     setDeployStatus('Waiting for broker connection…');
@@ -179,47 +208,117 @@ const AddAccountForm: FC<AddAccountFormProps> = ({ onClose, onDeployingChange })
         <div style={headerStyle}>
           <div>
             <h3 style={titleStyle}>Add Trading Account</h3>
-            <p style={subtitleStyle}>Connect your MetaTrader account</p>
+            <p style={subtitleStyle}>
+              {brokerType === 'deriv'
+                ? 'Connect a Deriv account (synthetic indices)'
+                : 'Connect a MetaTrader (MT5/MT4) account'}
+            </p>
           </div>
           <button onClick={onClose} style={closeBtnStyle} aria-label="Close">✕</button>
         </div>
         {renderStepIndicator()}
         <form onSubmit={handleSubmitCredentials}>
           {formError && <div style={errorStyle} role="alert">{formError}</div>}
-          <div style={fieldsGridStyle}>
-            <div style={fieldStyle}>
-              <label htmlFor="mt5-login" style={labelStyle}>Login</label>
-              <input id="mt5-login" type="text" value={login} onChange={(e) => setLogin(e.target.value)}
-                style={inputStyle} placeholder="12345678" required />
-            </div>
-            <div style={fieldStyle}>
-              <label htmlFor="mt5-password" style={labelStyle}>Password</label>
-              <input id="mt5-password" type="password" value={password} onChange={(e) => setPassword(e.target.value)}
-                style={inputStyle} placeholder="••••••••" required />
-            </div>
-            <div style={fieldStyle}>
-              <label htmlFor="mt5-server" style={labelStyle}>Server</label>
-              <input id="mt5-server" type="text" value={serverName} onChange={(e) => setServerName(e.target.value)}
-                style={inputStyle} placeholder="ICMarketsSC-Demo" required />
-            </div>
-            <div style={fieldStyle}>
-              <label htmlFor="mt5-platform" style={labelStyle}>Platform</label>
-              <select id="mt5-platform" value={platform} onChange={(e) => setPlatform(e.target.value as 'mt5' | 'mt4')}
-                style={inputStyle}>
-                <option value="mt5">MetaTrader 5</option>
-                <option value="mt4">MetaTrader 4</option>
-              </select>
+
+          {/* Broker selector */}
+          <div style={{ marginBottom: 14 }}>
+            <label style={labelStyle}>Broker</label>
+            <div style={brokerToggleStyle}>
+              {([
+                { key: 'deriv', label: 'Deriv', sub: 'Synthetics (R_25, R_75…)' },
+                { key: 'metaapi', label: 'MetaTrader', sub: 'MT5 / MT4 via MetaAPI' },
+              ] as const).map((opt) => {
+                const active = brokerType === opt.key;
+                return (
+                  <button
+                    key={opt.key}
+                    type="button"
+                    onClick={() => { setBrokerType(opt.key); setFormError(null); }}
+                    style={{
+                      ...brokerOptStyle,
+                      background: active ? 'var(--accent-dim)' : 'var(--bg-surface)',
+                      borderColor: active ? 'var(--border-glow)' : 'var(--glass-border)',
+                      boxShadow: active ? '0 0 10px var(--accent-glow)' : 'none',
+                    }}
+                  >
+                    <span style={{ fontSize: 12, fontWeight: 600, color: active ? 'var(--text-primary)' : 'var(--text-secondary)' }}>
+                      {opt.label}
+                    </span>
+                    <span style={{ fontSize: 9, color: 'var(--text-muted)', marginTop: 2 }}>{opt.sub}</span>
+                  </button>
+                );
+              })}
             </div>
           </div>
-          <div style={{ ...fieldStyle, marginBottom: 0 }}>
-            <label htmlFor="mt5-label" style={labelStyle}>Label <span style={{ fontWeight: 400, opacity: 0.5 }}>optional</span></label>
-            <input id="mt5-label" type="text" value={label} onChange={(e) => setLabel(e.target.value)}
-              style={inputStyle} placeholder="My Demo Account" />
+
+          {brokerType === 'deriv' ? (
+            <>
+              <div style={{ ...fieldStyle, marginBottom: 12 }}>
+                <label htmlFor="deriv-token" style={labelStyle}>API Token</label>
+                <input id="deriv-token" type="password" value={derivApiToken}
+                  onChange={(e) => setDerivApiToken(e.target.value)}
+                  style={inputStyle} placeholder="Deriv API token" autoComplete="off" required />
+                <div style={hintStyle}>
+                  Create one at app.deriv.com → Settings → API token (needs “Trade” + “Read” scopes).
+                </div>
+              </div>
+              <div style={fieldsGridStyle}>
+                <div style={fieldStyle}>
+                  <label htmlFor="deriv-loginid" style={labelStyle}>Login ID</label>
+                  <input id="deriv-loginid" type="text" value={derivLoginId}
+                    onChange={(e) => setDerivLoginId(e.target.value)}
+                    style={inputStyle} placeholder="CR1234567 / VRTC1234567" required />
+                </div>
+                <div style={fieldStyle}>
+                  <label htmlFor="deriv-kind" style={labelStyle}>Account Type</label>
+                  <select id="deriv-kind" value={accountKind}
+                    onChange={(e) => setAccountKind(e.target.value as 'personal' | 'demo' | 'prop')}
+                    style={inputStyle}>
+                    <option value="personal">Real</option>
+                    <option value="demo">Demo</option>
+                    <option value="prop">Prop firm</option>
+                  </select>
+                </div>
+              </div>
+            </>
+          ) : (
+            <div style={fieldsGridStyle}>
+              <div style={fieldStyle}>
+                <label htmlFor="mt5-login" style={labelStyle}>Login</label>
+                <input id="mt5-login" type="text" value={login} onChange={(e) => setLogin(e.target.value)}
+                  style={inputStyle} placeholder="12345678" required />
+              </div>
+              <div style={fieldStyle}>
+                <label htmlFor="mt5-password" style={labelStyle}>Password</label>
+                <input id="mt5-password" type="password" value={password} onChange={(e) => setPassword(e.target.value)}
+                  style={inputStyle} placeholder="••••••••" autoComplete="off" required />
+              </div>
+              <div style={fieldStyle}>
+                <label htmlFor="mt5-server" style={labelStyle}>Server</label>
+                <input id="mt5-server" type="text" value={serverName} onChange={(e) => setServerName(e.target.value)}
+                  style={inputStyle} placeholder="ICMarketsSC-Demo" required />
+              </div>
+              <div style={fieldStyle}>
+                <label htmlFor="mt5-platform" style={labelStyle}>Platform</label>
+                <select id="mt5-platform" value={platform} onChange={(e) => setPlatform(e.target.value as 'mt5' | 'mt4')}
+                  style={inputStyle}>
+                  <option value="mt5">MetaTrader 5</option>
+                  <option value="mt4">MetaTrader 4</option>
+                </select>
+              </div>
+            </div>
+          )}
+
+          <div style={{ ...fieldStyle, marginTop: 12, marginBottom: 0 }}>
+            <label htmlFor="acct-label" style={labelStyle}>Label <span style={{ fontWeight: 400, opacity: 0.5 }}>optional</span></label>
+            <input id="acct-label" type="text" value={label} onChange={(e) => setLabel(e.target.value)}
+              style={inputStyle} placeholder={brokerType === 'deriv' ? 'My Deriv Demo' : 'My MT5 Account'} />
           </div>
           <div style={footerStyle}>
             <button type="button" onClick={onClose} style={ghostBtnStyle}>Cancel</button>
             <button type="submit" style={primaryBtnStyle}>
-              <span style={{ marginRight: 6 }}>→</span> Deploy Account
+              <span style={{ marginRight: 6 }}>→</span>
+              {brokerType === 'deriv' ? 'Connect Account' : 'Deploy Account'}
             </button>
           </div>
         </form>
@@ -233,8 +332,10 @@ const AddAccountForm: FC<AddAccountFormProps> = ({ onClose, onDeployingChange })
       <div style={modalCardStyle}>
         <div style={headerStyle}>
           <div>
-            <h3 style={titleStyle}>Deploying Account</h3>
-            <p style={subtitleStyle}>Connecting to your broker via MetaAPI</p>
+            <h3 style={titleStyle}>{brokerType === 'deriv' ? 'Connecting Account' : 'Deploying Account'}</h3>
+            <p style={subtitleStyle}>
+              {brokerType === 'deriv' ? 'Connecting directly to Deriv' : 'Connecting to your broker via MetaAPI'}
+            </p>
           </div>
         </div>
         {renderStepIndicator()}
@@ -463,6 +564,18 @@ const inputStyle: React.CSSProperties = {
   borderRadius: 'var(--radius-sm)', color: 'var(--text-primary)', fontSize: 12,
   padding: '8px 10px', outline: 'none', boxSizing: 'border-box',
   transition: 'border-color 0.15s ease, box-shadow 0.15s ease',
+};
+const hintStyle: React.CSSProperties = {
+  fontSize: 10, color: 'var(--text-muted)', marginTop: 5, lineHeight: 1.4,
+};
+const brokerToggleStyle: React.CSSProperties = {
+  display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginTop: 5,
+};
+const brokerOptStyle: React.CSSProperties = {
+  display: 'flex', flexDirection: 'column', alignItems: 'flex-start',
+  padding: '10px 12px', borderRadius: 'var(--radius-sm)',
+  border: '1px solid var(--glass-border)', cursor: 'pointer',
+  transition: 'all 0.15s ease', textAlign: 'left',
 };
 const footerStyle: React.CSSProperties = {
   display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 20,
