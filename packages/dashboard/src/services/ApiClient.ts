@@ -403,6 +403,10 @@ export function createApiClient(baseURL?: string): ApiClient {
         const { data } = await http.patch<TradingAccount>(`/accounts/${id}/label`, { label });
         return data;
       },
+      async updateDerivToken(id: string, dto: { derivApiToken: string; derivLoginId?: string }): Promise<TradingAccount> {
+        const { data } = await http.patch<TradingAccount>(`/accounts/${id}/deriv-token`, dto);
+        return data;
+      },
       async remove(id: string): Promise<void> {
         await http.delete(`/accounts/${id}`);
       },

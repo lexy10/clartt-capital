@@ -37,6 +37,13 @@ const AccountCard: FC<AccountCardProps> = ({ account }) => {
   const [autopilotEnabled, setAutopilotEnabled] = useState(false);
   const [autopilotLoading, setAutopilotLoading] = useState(false);
 
+  // Deriv token update
+  const [showTokenForm, setShowTokenForm] = useState(false);
+  const [tokenDraft, setTokenDraft] = useState('');
+  const [tokenLoginDraft, setTokenLoginDraft] = useState('');
+  const [savingToken, setSavingToken] = useState(false);
+  const [tokenError, setTokenError] = useState<string | null>(null);
+
   const details = accountDetails[account.id];
 
   useEffect(() => {
@@ -142,6 +149,30 @@ const AccountCard: FC<AccountCardProps> = ({ account }) => {
     await undeployAccount(account.id);
     setConnectionStatus('disconnected');
     setActionLoading(null);
+  };
+
+  const handleUpdateToken = async () => {
+    if (!tokenDraft.trim()) { setTokenError('API token is required.'); return; }
+    setSavingToken(true);
+    setTokenError(null);
+    try {
+      await apiClient.accounts.updateDerivToken(account.id, {
+        derivApiToken: tokenDraft.trim(),
+        ...(tokenLoginDraft.trim() ? { derivLoginId: tokenLoginDraft.trim() } : {}),
+      });
+      setShowTokenForm(false);
+      setTokenDraft('');
+      setTokenLoginDraft('');
+      // Re-check connection with the new token.
+      setConnectionStatus('loading');
+      await fetchStatus(account.id);
+      await fetchDetails(account.id);
+      const d = useAccountStore.getState().accountDetails[account.id];
+      setConnectionStatus(d?.connection_status === 'CONNECTED' ? 'connected' : 'disconnected');
+    } catch (err) {
+      setTokenError(err instanceof Error ? err.message : 'Failed to update token');
+    }
+    setSavingToken(false);
   };
 
   const handleRemove = async () => {
@@ -293,13 +324,21 @@ const AccountCard: FC<AccountCardProps> = ({ account }) => {
         <p style={disconnectedMsgStyle}>
           {(() => {
             const s = useAccountStore.getState().accountStatuses[account.id];
+            const state = s?.state ?? details?.state;
+            // Deriv-specific reasons — tell the user the token is the problem.
+            if (state === 'UNAUTHORIZED')
+              return 'Invalid or expired Deriv token — update it below';
+            if (state === 'MISMATCHED')
+              return 'Token belongs to a different Deriv account';
+            if (state === 'UNCONFIGURED')
+              return 'No Deriv token set — add one below';
             if (s?.state === 'DEPLOYING') return 'Account deploying — waiting for broker…';
             if (s?.state === 'UNDEPLOYED') return 'Account not deployed';
             if (s?.state === 'DEPLOYED' && s?.connection_status !== 'CONNECTED')
               return 'Account deployed — connecting to broker…';
             if (details?.connection_status === 'TIMEOUT')
               return 'Connection timed out — retrying…';
-            return 'Account not connected';
+            return isDeriv ? 'Could not reach Deriv — check the token below' : 'Account not connected';
           })()}
         </p>
       )}
@@ -427,18 +466,55 @@ const AccountCard: FC<AccountCardProps> = ({ account }) => {
         ) : (
           <div style={actionsRowStyle}>
             <div style={{ display: 'flex', gap: 6 }}>
-              {connectionStatus === 'disconnected' && (
+              {/* Deriv accounts have no "deploy" (the token authorizes on
+                  demand) — offer token management instead. MetaAPI keeps
+                  the deploy/undeploy lifecycle. */}
+              {isDeriv ? (
+                <button onClick={() => { setShowTokenForm((v) => !v); setTokenError(null); }} disabled={!!actionLoading} style={accentBtnStyle}>
+                  {showTokenForm ? 'Close' : 'Update Token'}
+                </button>
+              ) : connectionStatus === 'disconnected' ? (
                 <button onClick={handleDeploy} disabled={!!actionLoading} style={accentBtnStyle}>
                   {actionLoading === 'deploy' ? 'Deploying…' : 'Deploy'}
                 </button>
-              )}
-              {connectionStatus === 'connected' && (
+              ) : connectionStatus === 'connected' ? (
                 <button onClick={handleUndeploy} disabled={!!actionLoading} style={warningBtnStyle}>
                   {actionLoading === 'undeploy' ? 'Undeploying…' : 'Undeploy'}
                 </button>
-              )}
+              ) : null}
             </div>
             <button onClick={handleRemove} disabled={!!actionLoading} style={dangerOutlineBtnStyle}>Remove</button>
+          </div>
+        )}
+
+        {/* Deriv token update form */}
+        {isDeriv && showTokenForm && (
+          <div style={{ marginTop: 10, display: 'flex', flexDirection: 'column', gap: 6 }}>
+            {tokenError && <div style={{ fontSize: 11, color: 'var(--danger)' }}>{tokenError}</div>}
+            <input
+              type="password"
+              value={tokenDraft}
+              onChange={(e) => setTokenDraft(e.target.value)}
+              placeholder="New Deriv API token"
+              autoComplete="off"
+              style={tokenInputStyle}
+            />
+            <input
+              type="text"
+              value={tokenLoginDraft}
+              onChange={(e) => setTokenLoginDraft(e.target.value)}
+              placeholder={`Login ID (optional, current: ${account.derivLoginId || '—'})`}
+              style={tokenInputStyle}
+            />
+            <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end' }}>
+              <button onClick={() => { setShowTokenForm(false); setTokenError(null); }} style={smallBtnStyle}>Cancel</button>
+              <button onClick={handleUpdateToken} disabled={savingToken} style={accentBtnStyle}>
+                {savingToken ? 'Saving…' : 'Save & Reconnect'}
+              </button>
+            </div>
+            <div style={{ fontSize: 10, color: 'var(--text-muted)' }}>
+              Create a token at app.deriv.com → Settings → API token (needs “Read” + “Trade”).
+            </div>
           </div>
         )}
       </div>
@@ -720,6 +796,19 @@ const accentBtnStyle: React.CSSProperties = {
   ...btnBase,
   background: 'var(--accent)',
   color: '#fff',
+};
+
+const tokenInputStyle: React.CSSProperties = {
+  width: '100%',
+  background: 'var(--bg-surface)',
+  border: '1px solid var(--glass-border)',
+  borderRadius: 'var(--radius-sm)',
+  color: 'var(--text-primary)',
+  fontSize: 11,
+  padding: '6px 8px',
+  outline: 'none',
+  boxSizing: 'border-box',
+  fontFamily: 'var(--font-mono)',
 };
 
 const warningBtnStyle: React.CSSProperties = {

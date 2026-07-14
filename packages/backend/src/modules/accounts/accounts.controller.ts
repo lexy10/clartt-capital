@@ -18,6 +18,7 @@ import { InstrumentsService } from '../instruments/instruments.service';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { CreateAccountDto } from './dto/create-account.dto';
 import { UpdateLabelDto } from './dto/update-label.dto';
+import { UpdateDerivTokenDto } from './dto/update-deriv-token.dto';
 import { SetAccountStrategiesDto } from './dto/set-account-strategies.dto';
 import { SetAccountInstrumentsDto } from '../instruments/dto/set-account-instruments.dto';
 
@@ -73,6 +74,18 @@ export class AccountsController {
     @Body() dto: UpdateLabelDto,
   ) {
     const account = await this.accountsService.updateLabel(req.user.id, id, dto.label);
+    return AccountsService.sanitize(account);
+  }
+
+  @Patch(':id/deriv-token')
+  async updateDerivToken(
+    @Request() req: any,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: UpdateDerivTokenDto,
+  ) {
+    const account = await this.accountsService.updateDerivToken(
+      req.user.id, id, dto.derivApiToken, dto.derivLoginId,
+    );
     return AccountsService.sanitize(account);
   }
 

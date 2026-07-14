@@ -308,6 +308,7 @@ export interface ApiClient {
     getDetails(id: string): Promise<AccountDetails>;
     getStatus(id: string): Promise<{ state: string; connection_status: string }>;
     updateLabel(id: string, label: string): Promise<TradingAccount>;
+    updateDerivToken(id: string, dto: { derivApiToken: string; derivLoginId?: string }): Promise<TradingAccount>;
     remove(id: string): Promise<void>;
     deploy(id: string): Promise<void>;
     undeploy(id: string): Promise<void>;

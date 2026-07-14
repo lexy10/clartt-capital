@@ -406,6 +406,33 @@ export class AccountsService {
     return this.tradingAccountRepo.save(account);
   }
 
+  /** Replace a Deriv account's API token (and optionally its login ID) so an
+   *  expired/invalid token can be fixed in place. The token is re-encrypted at
+   *  rest by the entity transformer. It's read fresh from the DB whenever a
+   *  worker starts or status/details are fetched, so the new token takes effect
+   *  immediately for status checks and on the next autopilot (re)start. */
+  async updateDerivToken(
+    userId: string,
+    accountId: string,
+    derivApiToken: string,
+    derivLoginId?: string,
+  ): Promise<TradingAccount> {
+    const account = await this.findOwnedAccount(userId, accountId);
+    if (account.brokerProvider !== 'deriv') {
+      throw new BadGatewayException('Not a Deriv-direct account');
+    }
+    account.derivApiToken = derivApiToken;
+    if (derivLoginId) {
+      account.derivLoginId = derivLoginId;
+    }
+    // Invalidate the cached status so the next fetch re-authorizes with the
+    // new token instead of returning the stale DISCONNECTED value.
+    try {
+      await this.redis.del(`account:status:${accountId}`);
+    } catch { /* non-fatal */ }
+    return this.tradingAccountRepo.save(account);
+  }
+
   /**
    * Trigger a reconciliation sweep for this account against the broker.
    *
