@@ -1,5 +1,7 @@
 import { type FC, useMemo } from 'react';
+import { Link } from 'react-router-dom';
 import { useAuthStore } from '../stores/authStore';
+import { ROUTES } from '../types/api';
 
 /**
  * Top-bar identity widget on the LEFT side.
@@ -24,12 +26,15 @@ const UserGreeting: FC = () => {
   const isAdmin = currentUser.role === 'admin';
 
   return (
-    <div
+    <Link
+      to={ROUTES.PROFILE}
+      title="Profile & password"
       style={{
         display: 'inline-flex',
         alignItems: 'center',
         gap: 8,
         fontSize: 13,
+        textDecoration: 'none',
       }}
     >
       <Avatar name={displayName} />
@@ -40,7 +45,7 @@ const UserGreeting: FC = () => {
       ) : (
         <span style={{ color: 'var(--text-primary)', fontWeight: 500 }}>{displayName}</span>
       )}
-    </div>
+    </Link>
   );
 };
 

@@ -255,6 +255,8 @@ export interface ApiClient {
   };
   users: {
     me(): Promise<{ id: string; email: string; role: string }>;
+    updateMe(dto: { email?: string }): Promise<{ id: string; email: string; role: string }>;
+    changeMyPassword(currentPassword: string, newPassword: string): Promise<void>;
     listAll(): Promise<AdminUser[]>;
     create(dto: { email: string; password: string; role: string }): Promise<AdminUser>;
     updateRole(id: string, role: string): Promise<AdminUser>;
@@ -526,6 +528,7 @@ export const ROUTES = {
   ALGORITHMS: '/admin/algorithms',
   RECONCILIATION: '/reconciliation',
   EVENTS: '/events',
+  PROFILE: '/profile',
   USERS: '/admin/users',
   HEALTH: '/health',
   AGENTS: '/agents',

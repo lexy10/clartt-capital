@@ -14,7 +14,7 @@ import {
 } from '@nestjs/common';
 import { UsersService } from './users.service';
 import { UpdateUserDto } from './dto/update-user.dto';
-import { CreateUserDto, UpdateRoleDto, SetActiveDto, ResetPasswordDto } from './dto/admin-user.dto';
+import { CreateUserDto, UpdateRoleDto, SetActiveDto, ResetPasswordDto, ChangePasswordDto } from './dto/admin-user.dto';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { RolesGuard } from '../../common/guards/roles.guard';
 import { Roles } from '../../common/decorators/roles.decorator';
@@ -33,6 +33,13 @@ export class UsersController {
   @UseGuards(JwtAuthGuard)
   updateProfile(@Request() req: any, @Body() dto: UpdateUserDto) {
     return this.usersService.updateProfile(req.user.id, dto);
+  }
+
+  @Patch('me/password')
+  @UseGuards(JwtAuthGuard)
+  @HttpCode(HttpStatus.NO_CONTENT)
+  async changeOwnPassword(@Request() req: any, @Body() dto: ChangePasswordDto) {
+    await this.usersService.changeOwnPassword(req.user.id, dto.currentPassword, dto.newPassword);
   }
 
   @Get()

@@ -119,6 +119,17 @@ export class UsersService {
     await this.usersRepository.save(user);
   }
 
+  /** Self-service password change — requires the current password. */
+  async changeOwnPassword(userId: string, currentPassword: string, newPassword: string): Promise<void> {
+    const user = await this.findOrThrow(userId);
+    const valid = await bcrypt.compare(currentPassword, user.passwordHash);
+    if (!valid) {
+      throw new BadRequestException('Current password is incorrect');
+    }
+    user.passwordHash = await bcrypt.hash(newPassword, BCRYPT_ROUNDS);
+    await this.usersRepository.save(user);
+  }
+
   private async findOrThrow(id: string): Promise<User> {
     const user = await this.usersRepository.findOne({ where: { id } });
     if (!user) throw new NotFoundException('User not found');

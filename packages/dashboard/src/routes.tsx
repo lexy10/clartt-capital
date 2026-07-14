@@ -20,6 +20,7 @@ const EventTimeline = lazy(() => import('./components/EventTimeline'));
 const SystemHealthPanel = lazy(() => import('./components/SystemHealthPanel'));
 const AgentsPage = lazy(() => import('./components/AgentsPage'));
 const UsersPage = lazy(() => import('./components/UsersPage'));
+const ProfilePage = lazy(() => import('./components/ProfilePage'));
 
 function withSuspense(Component: ComponentType) {
   return (
@@ -53,6 +54,7 @@ export const router = createBrowserRouter([
           { path: 'admin/algorithms', element: withSuspense(AlgorithmsPage) },
           { path: 'reconciliation', element: withSuspense(ReconciliationPage) },
           { path: 'events', element: withSuspense(EventTimeline) },
+          { path: 'profile', element: withSuspense(ProfilePage) },
           // System pages are admin-only. The AdminRoute guard hard-bounces
           // non-admins back to "/" even if they hit the URLs directly.
           {

@@ -200,6 +200,13 @@ export function createApiClient(baseURL?: string): ApiClient {
         const { data } = await http.get<{ id: string; email: string; role: string }>('/users/me');
         return data;
       },
+      async updateMe(dto: { email?: string }): Promise<{ id: string; email: string; role: string }> {
+        const { data } = await http.put<{ id: string; email: string; role: string }>('/users/me', dto);
+        return data;
+      },
+      async changeMyPassword(currentPassword: string, newPassword: string): Promise<void> {
+        await http.patch('/users/me/password', { currentPassword, newPassword });
+      },
       // Admin-only; returns 403 for non-admins.
       async listAll(): Promise<AdminUser[]> {
         const { data } = await http.get<AdminUser[]>('/users');
