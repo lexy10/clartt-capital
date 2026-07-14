@@ -58,7 +58,13 @@ export default function LayoutShell() {
     <Layout
       sidebar={<Sidebar />}
       topBar={<TopBar />}
-      chartPane={<div key={scopeKey} style={{ height: '100%' }}><Outlet /></div>}
+      chartPane={
+        // Wrapper (added for the user-switch remount key) MUST be a flex column,
+        // not a plain block — the chart page relies on `.chart-container` flex:1
+        // to fill the height. Without display:flex it collapses to 0 and the
+        // chart canvas renders blank.
+        <div key={scopeKey} style={{ height: '100%', display: 'flex', flexDirection: 'column', minHeight: 0 }}><Outlet /></div>
+      }
       infoPane={isChartRoute ? <InfoPane activeView="chart" instrument={instrument} /> : <></>}
       rightPanel={<ControlTower key={scopeKey} context={panelContext} />}
       isChartFullscreen={isChartRoute ? isChartFullscreen : true}
