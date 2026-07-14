@@ -239,6 +239,14 @@ export interface ApiErrorResponse {
   details?: Record<string, unknown>;
 }
 
+export interface AdminUser {
+  id: string;
+  email: string;
+  role: string;
+  isActive: boolean;
+  createdAt: string;
+}
+
 export interface ApiClient {
   auth: {
     login(credentials: LoginRequest): Promise<TokenPair>;
@@ -247,7 +255,11 @@ export interface ApiClient {
   };
   users: {
     me(): Promise<{ id: string; email: string; role: string }>;
-    listAll(): Promise<Array<{ id: string; email: string; role: string }>>;
+    listAll(): Promise<AdminUser[]>;
+    create(dto: { email: string; password: string; role: string }): Promise<AdminUser>;
+    updateRole(id: string, role: string): Promise<AdminUser>;
+    setActive(id: string, isActive: boolean): Promise<AdminUser>;
+    resetPassword(id: string, password: string): Promise<void>;
   };
   portfolios: {
     getSummary(): Promise<PortfolioSummary>;
@@ -514,6 +526,7 @@ export const ROUTES = {
   ALGORITHMS: '/admin/algorithms',
   RECONCILIATION: '/reconciliation',
   EVENTS: '/events',
+  USERS: '/admin/users',
   HEALTH: '/health',
   AGENTS: '/agents',
   LOGIN: '/login',

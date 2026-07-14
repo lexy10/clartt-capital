@@ -28,6 +28,7 @@ import type {
   StrategyPerformanceData,
   Instrument,
   AccountInstrument,
+  AdminUser,
   AccountStrategy,
   CreateInstrumentDto,
   UpdateInstrumentDto,
@@ -200,9 +201,24 @@ export function createApiClient(baseURL?: string): ApiClient {
         return data;
       },
       // Admin-only; returns 403 for non-admins.
-      async listAll(): Promise<Array<{ id: string; email: string; role: string }>> {
-        const { data } = await http.get<Array<{ id: string; email: string; role: string }>>('/users');
+      async listAll(): Promise<AdminUser[]> {
+        const { data } = await http.get<AdminUser[]>('/users');
         return data;
+      },
+      async create(dto: { email: string; password: string; role: string }): Promise<AdminUser> {
+        const { data } = await http.post<AdminUser>('/users', dto);
+        return data;
+      },
+      async updateRole(id: string, role: string): Promise<AdminUser> {
+        const { data } = await http.patch<AdminUser>(`/users/${id}/role`, { role });
+        return data;
+      },
+      async setActive(id: string, isActive: boolean): Promise<AdminUser> {
+        const { data } = await http.patch<AdminUser>(`/users/${id}/active`, { isActive });
+        return data;
+      },
+      async resetPassword(id: string, password: string): Promise<void> {
+        await http.patch(`/users/${id}/password`, { password });
       },
     },
 

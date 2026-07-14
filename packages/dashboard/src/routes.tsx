@@ -19,6 +19,7 @@ const ReconciliationPage = lazy(() => import('./components/ReconciliationPage'))
 const EventTimeline = lazy(() => import('./components/EventTimeline'));
 const SystemHealthPanel = lazy(() => import('./components/SystemHealthPanel'));
 const AgentsPage = lazy(() => import('./components/AgentsPage'));
+const UsersPage = lazy(() => import('./components/UsersPage'));
 
 function withSuspense(Component: ComponentType) {
   return (
@@ -57,6 +58,7 @@ export const router = createBrowserRouter([
           {
             element: <AdminRoute />,
             children: [
+              { path: 'admin/users', element: withSuspense(UsersPage) },
               { path: 'health', element: withSuspense(SystemHealthPanel) },
               { path: 'agents', element: withSuspense(AgentsPage) },
             ],

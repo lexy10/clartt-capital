@@ -22,6 +22,10 @@ export class User {
   @Column({ type: 'varchar', length: 50, default: 'trader' })
   role: string;
 
+  /** Disabled users keep their data but cannot log in. */
+  @Column({ type: 'boolean', name: 'is_active', default: true })
+  isActive: boolean;
+
   @CreateDateColumn({ type: 'timestamptz', name: 'created_at' })
   createdAt: Date;
 

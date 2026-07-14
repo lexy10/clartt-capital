@@ -45,6 +45,12 @@ export class AuthService {
       throw new UnauthorizedException('Invalid credentials');
     }
 
+    // Disabled users keep their data but can't authenticate.
+    if (user.isActive === false) {
+      await this.auditLogService.log('login_failed', user.id, ipAddress ?? null, { email, reason: 'account_disabled' });
+      throw new UnauthorizedException('Account is disabled');
+    }
+
     const tokens = await this.issueTokens(user);
     await this.auditLogService.log('login', user.id, ipAddress ?? null);
     return tokens;
