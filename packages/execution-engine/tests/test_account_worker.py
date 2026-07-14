@@ -587,7 +587,10 @@ class TestAccountWorkerStrategyFilter:
         )
 
         assert worker.assigned_strategy_ids == {"strat-X", "strat-Y"}
-        redis_client.get.assert_called_with(f"account:strategies:{account.id}")
+        # assert_any_call, not assert_called_with: init also loads
+        # account:symbols:{id} after the strategy IDs, so the strategies
+        # fetch is no longer the LAST redis.get call.
+        redis_client.get.assert_any_call(f"account:strategies:{account.id}")
 
     def test_handles_redis_failure_on_strategy_load(self):
         """If Redis fails during strategy load, worker defaults to empty set (accept all)."""

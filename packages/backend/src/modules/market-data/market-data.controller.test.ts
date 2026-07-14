@@ -13,7 +13,10 @@ describe('MarketDataController', () => {
         { symbol: 'US30', displayName: 'Dow Jones Industrial Average', type: 'index' },
       ]),
     };
-    controller = new MarketDataController(service as MarketDataService);
+    const backfillService = {
+      triggerBackfill: jest.fn().mockResolvedValue(undefined),
+    };
+    controller = new MarketDataController(service as MarketDataService, backfillService as never);
   });
 
   describe('GET /market-data/candles', () => {

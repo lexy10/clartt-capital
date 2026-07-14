@@ -8,6 +8,7 @@ import {
   OnGatewayDisconnect,
 } from '@nestjs/websockets';
 import { Logger } from '@nestjs/common';
+import { JwtService } from '@nestjs/jwt';
 import { Server, Socket } from 'socket.io';
 import { Candle, Signal, TradeExecutionResult, Timeframe } from '../../common/types';
 import { ReconciliationDiscrepancyPayload } from '../reconciliation/types';
@@ -101,15 +102,43 @@ export interface BacktestUpdatePayload {
   error_message?: string;
 }
 
-@WebSocketGateway({ cors: { origin: '*' } })
+@WebSocketGateway({
+  // In production the dashboard reaches us same-origin through the nginx
+  // proxy, so CORS only matters for direct cross-origin connections —
+  // lock it to the configured origin instead of '*'.
+  cors: { origin: process.env.CORS_ORIGIN || 'http://localhost:5173' },
+})
 export class TradingGateway implements OnGatewayConnection, OnGatewayDisconnect {
   private readonly logger = new Logger(TradingGateway.name);
+
+  constructor(private readonly jwtService: JwtService) {}
 
   @WebSocketServer()
   server: Server;
 
   handleConnection(client: Socket): void {
-    this.logger.log(`Client connected: ${client.id}`);
+    // Every socket must present a valid access token at connection time.
+    // Without this gate, anyone who can reach the port can subscribe to
+    // live signals, trades, and account P&L. The dashboard sends the token
+    // via socket.io's auth payload; a query param fallback is accepted for
+    // tooling. Expiry is only checked here (not continuously) — an expired
+    // token just means the next reconnect must present a fresh one.
+    const token =
+      (client.handshake.auth?.token as string | undefined) ??
+      (client.handshake.query?.token as string | undefined);
+    if (!token) {
+      this.logger.warn(`Client ${client.id} rejected: no auth token`);
+      client.disconnect(true);
+      return;
+    }
+    try {
+      const payload = this.jwtService.verify<{ sub: string }>(token);
+      client.data.userId = payload.sub;
+      this.logger.log(`Client connected: ${client.id} (user ${payload.sub})`);
+    } catch {
+      this.logger.warn(`Client ${client.id} rejected: invalid/expired token`);
+      client.disconnect(true);
+    }
   }
 
   handleDisconnect(client: Socket): void {

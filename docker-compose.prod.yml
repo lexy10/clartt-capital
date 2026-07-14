@@ -1,0 +1,54 @@
+# Production override. Used on the VPS together with the main compose file:
+#   docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
+#
+# Two jobs:
+#  1. Swap the four buildable services to pre-built GHCR images.
+#  2. Bind every non-public port to loopback. Only the dashboard (which
+#     proxies /api and /socket.io to the backend via its nginx) should be
+#     internet-reachable. Engine ports carry unauthenticated FastAPI
+#     health/agent endpoints; postgres/redis carry the data. None of those
+#     may face the internet. Reach them via SSH tunnel when needed:
+#       ssh -L 5434:localhost:5434 <user>@<vps>
+#
+# IMAGE_REPO_OWNER is the GitHub username/org that owns the repo (lowercase).
+# IMAGE_TAG defaults to "latest"; set it to the commit SHA in CI for
+# immutable, rollback-able deploys.
+
+services:
+  dashboard:
+    image: ghcr.io/${IMAGE_REPO_OWNER}/clartt-dashboard:${IMAGE_TAG:-latest}
+    pull_policy: always
+
+  backend:
+    image: ghcr.io/${IMAGE_REPO_OWNER}/clartt-backend:${IMAGE_TAG:-latest}
+    pull_policy: always
+    # Force production mode on the server regardless of what .env says: this
+    # turns OFF schema `synchronize` (dangerous in prod) and turns ON
+    # `migrationsRun` (so schema changes apply via migrations at boot). The
+    # base compose defaults NODE_ENV to development, so this override is what
+    # makes the VPS actually production.
+    environment:
+      - NODE_ENV=production
+    ports: !override
+      - "127.0.0.1:${BACKEND_PORT:-3000}:3000"
+
+  strategy-engine:
+    image: ghcr.io/${IMAGE_REPO_OWNER}/clartt-strategy-engine:${IMAGE_TAG:-latest}
+    pull_policy: always
+    ports: !override
+      - "127.0.0.1:${STRATEGY_ENGINE_PORT:-8001}:8001"
+      - "127.0.0.1:${STRATEGY_ENGINE_API_PORT:-8003}:8003"
+
+  execution-engine:
+    image: ghcr.io/${IMAGE_REPO_OWNER}/clartt-execution-engine:${IMAGE_TAG:-latest}
+    pull_policy: always
+    ports: !override
+      - "127.0.0.1:${EXECUTION_ENGINE_PORT:-8002}:8002"
+
+  postgres:
+    ports: !override
+      - "127.0.0.1:${POSTGRES_PORT:-5433}:5432"
+
+  redis:
+    ports: !override
+      - "127.0.0.1:${REDIS_PORT:-6379}:6379"

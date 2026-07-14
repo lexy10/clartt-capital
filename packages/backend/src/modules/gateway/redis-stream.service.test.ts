@@ -80,6 +80,10 @@ describe('RedisStreamService', () => {
       findOne: jest.fn().mockResolvedValue(null),
     };
 
+    const mockTradeRepo = {
+      findOne: jest.fn().mockResolvedValue(null),
+    };
+
     mockInstrumentsService = {
       getBrokerSymbol: jest.fn().mockResolvedValue('US30'),
     };
@@ -88,6 +92,7 @@ describe('RedisStreamService', () => {
       mockRedis,
       mockGateway as TradingGateway,
       mockTradingAccountRepo,
+      mockTradeRepo as never,
       mockInstrumentsService as InstrumentsService,
     );
   });
@@ -461,14 +466,14 @@ describe('RedisStreamService', () => {
       expect(mockGateway.emitStrategyOverlay).not.toHaveBeenCalled();
     });
 
-    it('should subscribe to trades:results, strategy:overlays, and candles:updates channels', async () => {
+    it('should subscribe to trades:results and strategy:overlays channels', async () => {
+      // candles:updates moved to its own subscriber (CandleSubscriberService)
       await service.onModuleInit();
 
       const subscriberClient = mockRedis.duplicate();
       expect(subscriberClient.subscribe).toHaveBeenCalledWith(
         'trades:results',
         'strategy:overlays',
-        'candles:updates',
         expect.any(Function),
       );
     });

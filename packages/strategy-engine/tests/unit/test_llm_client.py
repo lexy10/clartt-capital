@@ -167,7 +167,11 @@ def client(redis, publisher):
 
 
 class TestGetAgentConfig:
-    def test_returns_agent_config(self, client: LLMClient):
+    def test_returns_agent_config(self, client: LLMClient, monkeypatch):
+        # litellm's import loads the repo .env, which may set these — clear
+        # them so we test the hardcoded defaults, not the local machine.
+        monkeypatch.delenv("DEFAULT_LLM_PROVIDER", raising=False)
+        monkeypatch.delenv("DEFAULT_LLM_MODEL", raising=False)
         config = client.get_agent_config("research")
         assert isinstance(config, AgentConfig)
         assert config.llm_provider == "openai"

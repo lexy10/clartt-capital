@@ -16,7 +16,7 @@ from redis import Redis
 from src.api.algorithm_manager import AlgorithmManager
 from src.agents.api.router import agents_router
 from src.api.router import router as algorithms_router, set_manager
-from src.api.health_router import health_router, set_circuit_breakers
+from src.api.health_router import health_router, set_circuit_breakers, set_config_loader
 from src.autopilot.autopilot_monitor import AutopilotMonitor
 from src.backtesting.backtest_consumer import BacktestConsumer
 from src.backtesting.backtest_engine import BacktestEngine
@@ -114,6 +114,9 @@ def main() -> None:
         config_cb=config_loader.circuit_breaker,
         signals_cb=signal_persister.circuit_breaker,
     )
+    # Health also reports strategies that failed config validation —
+    # "enabled in the backend but silently not trading" must be visible.
+    set_config_loader(config_loader)
 
     # Create FastAPI app for algorithm management API
     api_port = int(os.environ.get("API_PORT", "8003"))

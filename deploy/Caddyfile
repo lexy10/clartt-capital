@@ -1,0 +1,31 @@
+# Caddy reverse proxy for the Clartt dashboard.
+#
+# Caddy terminates TLS (automatic Let's Encrypt certs) on 80/443 and proxies
+# everything to the dashboard container over the internal docker network. The
+# dashboard's own nginx then serves the SPA and proxies /api + /socket.io to
+# the backend — so Caddy just needs one catch-all reverse_proxy.
+#
+# CLARTT_DOMAIN and CLARTT_ACME_EMAIL come from the environment (set in .env).
+# WebSocket upgrades (/socket.io) are handled transparently by reverse_proxy.
+
+{
+	# Email for Let's Encrypt expiry notices. Optional but recommended.
+	email {$CLARTT_ACME_EMAIL}
+}
+
+{$CLARTT_DOMAIN} {
+	encode zstd gzip
+
+	# Proxy all traffic to the dashboard container (its nginx does the rest).
+	reverse_proxy dashboard:80
+
+	# Belt-and-suspenders security headers at the edge. The dashboard's nginx
+	# also sets a CSP; these cover the TLS layer.
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options "nosniff"
+		X-Frame-Options "DENY"
+		Referrer-Policy "same-origin"
+		-Server
+	}
+}

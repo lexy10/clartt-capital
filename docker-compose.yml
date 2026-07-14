@@ -15,6 +15,14 @@ services:
       - "${DASHBOARD_PORT:-8080}:80"
     depends_on:
       - backend
+    healthcheck:
+      # 127.0.0.1, not localhost: busybox wget resolves localhost to ::1
+      # first and nginx listens on IPv4 only.
+      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:80/"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
     networks:
       - trading-net
     restart: unless-stopped
@@ -33,6 +41,10 @@ services:
       - JWT_REFRESH_SECRET=${JWT_REFRESH_SECRET}
       - JWT_ACCESS_EXPIRY=${JWT_ACCESS_EXPIRY:-15m}
       - JWT_REFRESH_EXPIRY=${JWT_REFRESH_EXPIRY:-7d}
+      - TOKEN_ENCRYPTION_KEY=${TOKEN_ENCRYPTION_KEY:-}
+      - CORS_ORIGIN=${CORS_ORIGIN:-}
+      - ADMIN_EMAIL=${ADMIN_EMAIL:-}
+      - ADMIN_PASSWORD=${ADMIN_PASSWORD:-}
       - CB_FAILURE_THRESHOLD=${CB_FAILURE_THRESHOLD:-5}
       - CB_RECOVERY_TIMEOUT_MS=${CB_RECOVERY_TIMEOUT_MS:-30000}
       - CB_PROBE_INTERVAL_MS=${CB_PROBE_INTERVAL_MS:-10000}
@@ -41,11 +53,19 @@ services:
       - BACKTEST_REQUEST_HIGH_WATER_MARK=${BACKTEST_REQUEST_HIGH_WATER_MARK:-10}
       - EVENT_RETENTION_DAYS=${EVENT_RETENTION_DAYS:-90}
       - EVENT_ARCHIVE_RETENTION_DAYS=${EVENT_ARCHIVE_RETENTION_DAYS:-365}
+      - CANDLE_RETENTION_DAYS=${CANDLE_RETENTION_DAYS:-365}
     depends_on:
       postgres:
         condition: service_healthy
       redis:
         condition: service_healthy
+    healthcheck:
+      # node:20-alpine has no wget/curl guarantees; node's fetch is built in.
+      test: ["CMD", "node", "-e", "fetch('http://localhost:3000/api/health').then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
     networks:
       - trading-net
     restart: unless-stopped
@@ -76,6 +96,13 @@ services:
     depends_on:
       redis:
         condition: service_healthy
+    healthcheck:
+      # /health lives on the FastAPI management port (8003), not metrics (8001).
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8003/health', timeout=5)"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
     networks:
       - trading-net
     restart: unless-stopped
@@ -108,6 +135,12 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8002/health', timeout=5)"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
     networks:
       - trading-net
     restart: unless-stopped

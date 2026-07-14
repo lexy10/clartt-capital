@@ -30,13 +30,15 @@ export class AccountsController {
   ) {}
 
   @Post()
-  create(@Request() req: any, @Body() dto: CreateAccountDto) {
-    return this.accountsService.create(req.user.id, dto);
+  async create(@Request() req: any, @Body() dto: CreateAccountDto) {
+    const account = await this.accountsService.create(req.user.id, dto);
+    return AccountsService.sanitize(account);
   }
 
   @Get()
-  findAll(@Request() req: any) {
-    return this.accountsService.findAllByUser(req.user.id);
+  async findAll(@Request() req: any) {
+    const accounts = await this.accountsService.findAllByUser(req.user.id);
+    return accounts.map((a) => AccountsService.sanitize(a));
   }
 
   @Get(':id/details')
@@ -65,12 +67,13 @@ export class AccountsController {
 
 
   @Patch(':id/label')
-  updateLabel(
+  async updateLabel(
     @Request() req: any,
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: UpdateLabelDto,
   ) {
-    return this.accountsService.updateLabel(req.user.id, id, dto.label);
+    const account = await this.accountsService.updateLabel(req.user.id, id, dto.label);
+    return AccountsService.sanitize(account);
   }
 
   @Post(':id/deploy')

@@ -13,7 +13,7 @@ describe('MarketDataService', () => {
   beforeEach(() => {
     mockCandleRepo = {
       find: jest.fn().mockResolvedValue([]),
-      upsert: jest.fn().mockResolvedValue(undefined),
+      query: jest.fn().mockResolvedValue(undefined),
     };
     mockAccountInstrumentRepo = {
       createQueryBuilder: jest.fn(),
@@ -107,24 +107,50 @@ describe('MarketDataService', () => {
   });
 
   describe('upsertCandle', () => {
-    it('should call repo upsert with correct conflict paths', async () => {
-      const candle = {
-        instrument: 'US30',
-        timeframe: '1m',
-        open: 34000,
-        high: 34050,
-        low: 33990,
-        close: 34020,
-        volume: 100,
-        timestamp: new Date('2024-01-01T10:00:00Z'),
-      };
+    const candle = {
+      instrument: 'US30',
+      timeframe: '1m',
+      open: 34000,
+      high: 34050,
+      low: 33990,
+      close: 34020,
+      volume: 100,
+      timestamp: new Date('2024-01-01T10:00:00Z'),
+    };
 
+    it('live tick path uses raw upsert that never overwrites completed candles', async () => {
       await service.upsertCandle(candle);
 
-      expect(mockCandleRepo.upsert).toHaveBeenCalledWith(candle, {
-        conflictPaths: ['instrument', 'timeframe', 'timestamp'],
-        upsertType: 'on-conflict-do-update',
-      });
+      expect(mockCandleRepo.query).toHaveBeenCalledTimes(1);
+      const [sql, params] = (mockCandleRepo.query as jest.Mock).mock.calls[0];
+      expect(sql).toContain('ON CONFLICT (instrument, timeframe, timestamp)');
+      // The whole point of the raw SQL: a completed candle keeps its values.
+      expect(sql).toContain('WHEN candles.completed = true THEN candles.close');
+      expect(params).toEqual([
+        'US30', '1m', 34000, 34050, 33990, 34020, 100,
+        candle.timestamp, false,
+      ]);
+    });
+
+    it('backfill path (force=true) overwrites via query builder and marks completed', async () => {
+      const execute = jest.fn().mockResolvedValue(undefined);
+      const qb: any = {
+        insert: jest.fn().mockReturnThis(),
+        into: jest.fn().mockReturnThis(),
+        values: jest.fn().mockReturnThis(),
+        orUpdate: jest.fn().mockReturnThis(),
+        execute,
+      };
+      mockCandleRepo.createQueryBuilder = jest.fn().mockReturnValue(qb) as never;
+
+      await service.upsertCandle(candle, true);
+
+      expect(qb.values).toHaveBeenCalledWith({ ...candle, completed: true });
+      expect(qb.orUpdate).toHaveBeenCalledWith(
+        ['open', 'high', 'low', 'close', 'volume', 'completed'],
+        ['instrument', 'timeframe', 'timestamp'],
+      );
+      expect(execute).toHaveBeenCalled();
     });
   });
 

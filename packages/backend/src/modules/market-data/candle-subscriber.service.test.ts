@@ -99,23 +99,18 @@ describe('CandleSubscriberService', () => {
       await service.onModuleInit();
     });
 
-    it('should upsert candle and emit via gateway on valid message', () => {
+    it('should upsert the 1m candle plus one aggregate per higher timeframe', () => {
       messageHandler('candles:updates', validCandleJson);
 
-      expect(mockMarketDataService.upsertCandle).toHaveBeenCalledWith({
-        instrument: 'US30',
-        timeframe: '1m',
-        open: 39150.5,
-        high: 39155.0,
-        low: 39148.0,
-        close: 39152.3,
-        volume: 120,
-        timestamp: new Date('2024-01-15T14:30:00.000Z'),
-      });
+      // 1m persist + [5m, 15m, 30m, 1h, 4h, 1d] aggregation buckets
+      const calls = (mockMarketDataService.upsertCandle as jest.Mock).mock.calls;
+      expect(calls).toHaveLength(7);
+      expect(calls.map(([c]) => c.timeframe)).toEqual([
+        '1m', '5m', '15m', '30m', '1h', '4h', '1d',
+      ]);
 
-      expect(mockTradingGateway.emitCandleUpdate).toHaveBeenCalledWith(
-        'US30',
-        '1m',
+      // The 1m candle goes through as-is, not yet completed, no force flag
+      expect(mockMarketDataService.upsertCandle).toHaveBeenCalledWith(
         {
           instrument: 'US30',
           timeframe: '1m',
@@ -124,8 +119,20 @@ describe('CandleSubscriberService', () => {
           low: 39148.0,
           close: 39152.3,
           volume: 120,
-          timestamp: '2024-01-15T14:30:00.000Z',
+          timestamp: new Date('2024-01-15T14:30:00.000Z'),
+          completed: false,
         },
+        false,
+      );
+
+      expect(mockTradingGateway.emitCandleUpdate).toHaveBeenCalledWith(
+        'US30',
+        '1m',
+        expect.objectContaining({
+          instrument: 'US30',
+          timeframe: '1m',
+          close: 39152.3,
+        }),
       );
     });
 
@@ -155,16 +162,19 @@ describe('CandleSubscriberService', () => {
       expect(mockMarketDataService.upsertCandle).not.toHaveBeenCalled();
     });
 
-    it('should skip candle with invalid timeframe', () => {
-      const invalid = JSON.stringify({
+    it('should ignore the timeframe field — the source stream is always 1m', () => {
+      // The subscriber treats every message as a 1m candle and derives
+      // higher timeframes itself, so a bogus timeframe is not a rejection.
+      const oddTimeframe = JSON.stringify({
         instrument: 'US30', timeframe: '2m',
         open: 100, high: 101, low: 99, close: 100.5,
         volume: 10, timestamp: '2024-01-15T14:30:00.000Z',
       });
 
-      messageHandler('candles:updates', invalid);
+      messageHandler('candles:updates', oddTimeframe);
 
-      expect(mockMarketDataService.upsertCandle).not.toHaveBeenCalled();
+      const calls = (mockMarketDataService.upsertCandle as jest.Mock).mock.calls;
+      expect(calls[0][0].timeframe).toBe('1m');
     });
 
     it('should skip candle with non-numeric OHLCV fields', () => {

@@ -1,11 +1,17 @@
 import { NestFactory } from '@nestjs/core';
 import { ValidationPipe } from '@nestjs/common';
+import helmet from 'helmet';
 import { AppModule } from './app.module';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
 
   app.setGlobalPrefix('api');
+
+  // Security headers. CSP is off here because the API serves JSON, not
+  // HTML — the dashboard's CSP lives in its nginx config. The rest
+  // (nosniff, frame denial, HSTS when behind TLS) applies as-is.
+  app.use(helmet({ contentSecurityPolicy: false }));
 
   app.enableCors({
     origin: process.env.CORS_ORIGIN || 'http://localhost:5173',

@@ -1,0 +1,45 @@
+# TLS layer — opt-in. Add as a THIRD compose file once you have a domain
+# pointing at the VPS:
+#
+#   docker compose -f docker-compose.yml -f docker-compose.prod.yml \
+#                  -f docker-compose.tls.yml up -d
+#
+# Requires in .env:
+#   CLARTT_DOMAIN=trade.yourdomain.com
+#   CLARTT_ACME_EMAIL=you@yourdomain.com
+#   CORS_ORIGIN=https://trade.yourdomain.com
+#
+# Caddy fronts the dashboard on 80/443 with automatic Let's Encrypt certs.
+# The dashboard stops being published on 0.0.0.0 — only Caddy is public.
+# After this is up you can tighten the firewall: `sudo ufw delete allow 8080`.
+
+services:
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp" # HTTP/3
+    environment:
+      - CLARTT_DOMAIN=${CLARTT_DOMAIN}
+      - CLARTT_ACME_EMAIL=${CLARTT_ACME_EMAIL:-}
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data # cert storage — MUST persist or you re-issue certs every restart
+      - caddy-config:/config
+    depends_on:
+      - dashboard
+    networks:
+      - trading-net
+
+  dashboard:
+    # Caddy now serves the public traffic. Stop publishing the dashboard on
+    # 0.0.0.0; keep a loopback bind for on-box debugging only. Caddy still
+    # reaches it as `dashboard:80` over the internal network.
+    ports: !override
+      - "127.0.0.1:${DASHBOARD_PORT:-8080}:80"
+
+volumes:
+  caddy-data:
+  caddy-config:

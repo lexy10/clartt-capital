@@ -1,14 +1,19 @@
-pandas>=2.0.0
-numpy>=1.24.0
-redis>=5.0.0
-pydantic>=2.0.0
-prometheus_client>=0.20.0
-hypothesis>=6.80.0
-pytest>=7.4.0
-pytest-asyncio>=0.21.0
-requests>=2.31.0
-fastapi>=0.110.0
-uvicorn>=0.29.0
-python-multipart>=0.0.9
-jsonschema>=4.20.0
-litellm>=1.0.0
+# Pinned to the exact versions in the images verified on 2026-07-04.
+# Unpinned ranges here mean every rebuild can silently change numerical
+# behavior (pandas/numpy) — in a trading engine that's a money bug.
+# To upgrade: bump deliberately, run the full pytest suite + a backtest
+# comparison before deploying.
+pandas==3.0.2
+numpy==2.4.4
+redis==7.4.0
+pydantic==2.12.5
+prometheus_client==0.25.0
+hypothesis==6.152.3
+pytest==9.0.3
+pytest-asyncio==1.3.0
+requests==2.33.1
+fastapi==0.136.1
+uvicorn==0.46.0
+python-multipart==0.0.27
+jsonschema==4.23.0
+litellm==1.83.14

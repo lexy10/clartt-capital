@@ -22,10 +22,20 @@ class StrategyConfigLoader:
         self._cache: list[StrategyConfig] = []
         self._cache_time: float = 0.0
         self._ttl: float = 60.0
+        # Strategies that failed validation on the last refresh, keyed by
+        # "name (id)". A strategy in here is configured in the backend but
+        # NOT trading — that mismatch must be visible (health endpoint),
+        # not buried in a log line.
+        self._invalid: dict[str, str] = {}
         self._cb = CircuitBreaker(
             name="strategy-to-backend-config",
             on_state_change=self._on_state_change,
         )
+
+    @property
+    def invalid_configs(self) -> dict[str, str]:
+        """Strategies that failed to parse on the last refresh (name -> error)."""
+        return dict(self._invalid)
 
     def get_active_strategies(self, instrument: str | None = None) -> list[StrategyConfig]:
         """Return enabled strategies, optionally filtered by instrument.
@@ -84,21 +94,35 @@ class StrategyConfigLoader:
         raw_strategies = response.json()
 
         parsed: list[StrategyConfig] = []
+        invalid: dict[str, str] = {}
         for raw in raw_strategies:
-            config = self._parse_strategy(raw)
+            # Skip disabled strategies before validation — a strategy that
+            # isn't running shouldn't be validated or reported as "invalid".
+            # This is what lets an incompletely-configured strategy sit in the
+            # catalogue (disabled) without spamming parse errors every cycle.
+            if not raw.get("enabled", True):
+                continue
+            config = self._parse_strategy(raw, invalid)
             if config is not None and config.enabled:
                 parsed.append(config)
 
         self._cache = parsed
+        self._invalid = invalid
         self._cache_time = time.time()
 
-    def _parse_strategy(self, raw: dict) -> StrategyConfig | None:
+    def _parse_strategy(
+        self, raw: dict, invalid: dict[str, str] | None = None
+    ) -> StrategyConfig | None:
         """Parse a backend strategy response into StrategyConfig.
 
         Extracts id, name, algorithm from top-level response and merges
         them into the config dict before pydantic validation.
-        Returns None on validation error.
+        Returns None on validation error; the failure is recorded in
+        `invalid` (when provided) so the health endpoint can surface it.
         """
+        if invalid is None:
+            invalid = {}
+        key = f"{raw.get('name', 'unnamed')} ({raw.get('id', '?')})"
         try:
             config_dict = dict(raw.get("config", {}))
             config_dict["id"] = raw.get("id")
@@ -107,6 +131,19 @@ class StrategyConfigLoader:
             if "enabled" in raw:
                 config_dict["enabled"] = raw["enabled"]
             return StrategyConfig(**config_dict)
-        except (ValidationError, Exception) as exc:
-            logger.warning("Failed to parse strategy config: %s", exc)
+        except ValidationError as exc:
+            # Compact one-line summary: which fields, what kind of error.
+            fields = ", ".join(
+                ".".join(str(loc) for loc in err["loc"]) for err in exc.errors()
+            )
+            summary = f"invalid config — bad/missing fields: {fields}"
+            invalid[key] = summary
+            # First sighting is a warning; the same broken config on every
+            # 60s refresh only logs at debug to keep the log readable.
+            level = logging.DEBUG if self._invalid.get(key) == summary else logging.WARNING
+            logger.log(level, "Strategy %s NOT loaded: %s", key, summary)
+            return None
+        except Exception as exc:
+            invalid[key] = f"parse error: {exc}"
+            logger.warning("Strategy %s NOT loaded: unexpected parse error", key, exc_info=True)
             return None

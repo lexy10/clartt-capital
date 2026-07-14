@@ -20,6 +20,7 @@ health_router = APIRouter(tags=["health"])
 # Set by main.py after creating pipeline components
 _config_cb: Optional[CircuitBreaker] = None
 _signals_cb: Optional[CircuitBreaker] = None
+_config_loader = None  # StrategyConfigLoader — avoids circular import
 
 
 def set_circuit_breakers(
@@ -30,6 +31,14 @@ def set_circuit_breakers(
     global _config_cb, _signals_cb
     _config_cb = config_cb
     _signals_cb = signals_cb
+
+
+def set_config_loader(loader) -> None:
+    """Inject the strategy config loader so /health can report strategies
+    that are configured in the backend but failing validation (= silently
+    not trading)."""
+    global _config_loader
+    _config_loader = loader
 
 
 class DependencyHealth(BaseModel):
@@ -44,6 +53,9 @@ class HealthResponse(BaseModel):
     status: str  # "healthy" | "degraded" | "unhealthy"
     timestamp: str
     dependencies: list[DependencyHealth]
+    # Strategies configured in the backend that failed validation and are
+    # NOT running (name -> error summary). Non-empty => degraded.
+    invalidStrategyConfigs: dict[str, str] = {}
 
 
 def _status_from_cb_state(state: CircuitBreakerState) -> str:
@@ -103,9 +115,16 @@ def health() -> HealthResponse:
 
     overall = _aggregate_status(dep_statuses) if dep_statuses else "healthy"
 
+    # A strategy the backend thinks is enabled but the engine can't parse is
+    # a silent trading gap — surface it and degrade overall status.
+    invalid = _config_loader.invalid_configs if _config_loader is not None else {}
+    if invalid and overall == "healthy":
+        overall = "degraded"
+
     return HealthResponse(
         service="strategy-engine",
         status=overall,
         timestamp=datetime.now(timezone.utc).isoformat(),
         dependencies=dependencies,
+        invalidStrategyConfigs=invalid,
     )

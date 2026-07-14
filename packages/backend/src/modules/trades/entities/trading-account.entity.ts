@@ -8,6 +8,7 @@ import {
   Unique,
 } from 'typeorm';
 import { User } from '../../auth/entities/user.entity';
+import { encryptedColumn } from '../../../common/security/encrypted-column.transformer';
 
 @Entity('trading_accounts')
 @Unique(['userId', 'mt5Login', 'mt5Server'])
@@ -26,8 +27,11 @@ export class TradingAccount {
   @Column({ type: 'varchar', length: 255, name: 'metaapi_account_id', nullable: true })
   metaapiAccountId: string | null;
 
-  /** Deriv API token for direct WebSocket trading. Only set when brokerProvider='deriv'. */
-  @Column({ type: 'varchar', length: 500, name: 'deriv_api_token', nullable: true })
+  /** Deriv API token for direct WebSocket trading. Only set when brokerProvider='deriv'.
+   *  Encrypted at rest (AES-256-GCM via TOKEN_ENCRYPTION_KEY); transparently
+   *  decrypted on load so service code sees plaintext. Never expose in API
+   *  responses — see sanitize() in accounts.service.ts. */
+  @Column({ type: 'varchar', length: 500, name: 'deriv_api_token', nullable: true, transformer: encryptedColumn })
   derivApiToken: string | null;
 
   /** Deriv login ID (e.g. "CR1234567"). */

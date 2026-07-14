@@ -1,5 +1,6 @@
 import { TradingGateway } from './trading.gateway';
 import { Server, Socket } from 'socket.io';
+import { JwtService } from '@nestjs/jwt';
 import { Candle, Signal, TradeExecutionResult, Timeframe } from '../../common/types';
 
 describe('TradingGateway', () => {
@@ -7,9 +8,11 @@ describe('TradingGateway', () => {
   let mockServer: { to: jest.Mock };
   let mockSocket: { id: string; join: jest.Mock };
   let mockEmit: jest.Mock;
+  let mockJwtService: { verify: jest.Mock };
 
   beforeEach(() => {
-    gateway = new TradingGateway();
+    mockJwtService = { verify: jest.fn().mockReturnValue({ sub: 'user-1' }) };
+    gateway = new TradingGateway(mockJwtService as unknown as JwtService);
     mockEmit = jest.fn();
     mockServer = { to: jest.fn().mockReturnValue({ emit: mockEmit }) };
     mockSocket = { id: 'test-client', join: jest.fn() };

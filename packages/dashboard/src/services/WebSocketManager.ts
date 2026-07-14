@@ -73,6 +73,10 @@ export class WebSocketManager {
       transports: ['websocket'],
       autoConnect: false,
       reconnection: false, // we handle reconnection manually
+      // The gateway rejects unauthenticated sockets. Read the token at
+      // connect() time (a new socket is created per attempt, so reconnects
+      // automatically pick up a refreshed token from localStorage).
+      auth: { token: localStorage.getItem('us30_access_token') ?? '' },
     });
 
     this.socket.on('connect', this.handleConnect);

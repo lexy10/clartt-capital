@@ -1,10 +1,14 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
+import { HttpService } from '@nestjs/axios';
 import { PortfoliosService } from './portfolios.service';
 import { Position } from '../trades/entities/position.entity';
 import { Trade } from '../trades/entities/trade.entity';
 import { TradingAccount } from '../trades/entities/trading-account.entity';
 import { PortfolioSnapshot } from './entities/portfolio-snapshot.entity';
+import { REDIS_CLIENT } from '../../common/modules/redis.module';
+import { TradingGateway } from '../gateway/trading.gateway';
+import { PerformanceService } from '../performance/performance.service';
 
 describe('PortfoliosService', () => {
   let service: PortfoliosService;
@@ -26,6 +30,10 @@ describe('PortfoliosService', () => {
         { provide: getRepositoryToken(Trade), useValue: tradesRepo },
         { provide: getRepositoryToken(TradingAccount), useValue: accountsRepo },
         { provide: getRepositoryToken(PortfolioSnapshot), useValue: snapshotsRepo },
+        { provide: HttpService, useValue: { get: jest.fn(), post: jest.fn() } },
+        { provide: REDIS_CLIENT, useValue: { set: jest.fn(), get: jest.fn() } },
+        { provide: TradingGateway, useValue: { emitAccountSync: jest.fn() } },
+        { provide: PerformanceService, useValue: {} },
       ],
     }).compile();
 
@@ -150,30 +158,8 @@ describe('PortfoliosService', () => {
     });
   });
 
-  describe('recordSnapshots', () => {
-    it('should record snapshots for active accounts', async () => {
-      accountsRepo.find.mockResolvedValue([{ id: 'acc-1', isActive: true }]);
-      positionsRepo.find.mockResolvedValue([
-        {
-          entryPrice: '100.00000000',
-          currentPrice: '110.00000000',
-          positionSize: '1.00000000',
-          direction: 'BUY',
-        },
-      ]);
-      snapshotsRepo.create.mockReturnValue({ id: 'snap-1' });
-      snapshotsRepo.save.mockResolvedValue({ id: 'snap-1' });
-
-      await service.recordSnapshots();
-
-      expect(snapshotsRepo.create).toHaveBeenCalledWith(
-        expect.objectContaining({
-          accountId: 'acc-1',
-          unrealizedPnl: '10',
-          openPositions: 1,
-        }),
-      );
-      expect(snapshotsRepo.save).toHaveBeenCalled();
-    });
-  });
+  // recordSnapshots() was replaced by syncAccounts(), which pulls balances
+  // from the execution engine over HTTP instead of computing P&L locally.
+  // The old test tested removed behavior; syncAccounts needs an HTTP-mocked
+  // test of its own (not yet written).
 });

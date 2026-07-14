@@ -48,6 +48,14 @@ export class AccountsService {
       process.env.EXECUTION_ENGINE_URL || 'http://execution-engine:8002';
   }
 
+  /** Strip secrets before an account entity leaves the API boundary.
+   *  The broker token must never reach the browser: the dashboard doesn't
+   *  need it, and an XSS there must not become "attacker can trade". */
+  static sanitize(account: TradingAccount): Omit<TradingAccount, 'derivApiToken'> {
+    const { derivApiToken: _token, ...safe } = account;
+    return safe as Omit<TradingAccount, 'derivApiToken'>;
+  }
+
   async create(
     userId: string,
     dto: CreateAccountDto,

@@ -1,7 +1,8 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
-import { APP_INTERCEPTOR } from '@nestjs/core';
+import { APP_INTERCEPTOR, APP_GUARD } from '@nestjs/core';
+import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
 import { LoggingInterceptor } from './common/interceptors/logging.interceptor';
 import { MetricsInterceptor } from './common/interceptors/metrics.interceptor';
 import { EffectiveUserInterceptor } from './common/interceptors/effective-user.interceptor';
@@ -28,6 +29,7 @@ import { EventsModule } from './modules/events/events.module';
 import { CircuitBreakerModule } from './common/circuit-breaker/circuit-breaker.module';
 import { HealthModule } from './modules/health/health.module';
 import { AgentsModule } from './modules/agents/agents.module';
+import { SeedModule } from './common/seed/seed.module';
 import { PortfolioSnapshotWorker } from './common/workers/portfolio-snapshot.worker';
 import { AlertEvaluationWorker } from './common/workers/alert-evaluation.worker';
 import { Alert } from './modules/alerts/entities/alert.entity';
@@ -38,6 +40,16 @@ import { Alert } from './modules/alerts/entities/alert.entity';
       isGlobal: true,
       envFilePath: ['.env'],
     }),
+    // Global rate limit: generous enough that the dashboard's polling never
+    // trips it (LiveDesk fires ~10 requests / 30s tick per open tab), but it
+    // stops runaway scripted abuse. Auth endpoints carry a much stricter
+    // per-route override (see auth.controller.ts) to block brute-force.
+    ThrottlerModule.forRoot([
+      {
+        ttl: 60_000,
+        limit: 300,
+      },
+    ]),
     TypeOrmModule.forRootAsync({
       imports: [ConfigModule],
       inject: [ConfigService],
@@ -46,6 +58,15 @@ import { Alert } from './modules/alerts/entities/alert.entity';
         url: config.get<string>('DATABASE_URL'),
         autoLoadEntities: true,
         synchronize: config.get<string>('NODE_ENV') !== 'production',
+        // Production schema management: synchronize is off there, so
+        // migrations are the only way schema changes reach the VPS. They
+        // run automatically at boot. The compiled migrations land in
+        // dist/migrations by nest build.
+        // NOTE: a DB restored from a dev dump has the full schema but no
+        // migrations history — baseline it first (deploy/vps-restore-db.sh
+        // does this) or every migration will re-run and fail.
+        migrations: [__dirname + '/migrations/*.js'],
+        migrationsRun: config.get<string>('NODE_ENV') === 'production',
         // Only log errors + slow queries (>500ms). Logging every query in
         // dev floods stdout when the candle ingestion runs and stalls the
         // event loop — making all API endpoints (including overview) feel
@@ -85,8 +106,13 @@ import { Alert } from './modules/alerts/entities/alert.entity';
     CircuitBreakerModule,
     HealthModule,
     AgentsModule,
+    SeedModule,
   ],
   providers: [
+    {
+      provide: APP_GUARD,
+      useClass: ThrottlerGuard,
+    },
     {
       provide: APP_INTERCEPTOR,
       useClass: LoggingInterceptor,
