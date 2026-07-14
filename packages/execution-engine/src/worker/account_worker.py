@@ -283,6 +283,11 @@ class AccountWorker:
         self._running = True
         logger.info("[account:%s] Worker started", self._account.id)
 
+        # Resume monitoring positions that were open before this engine started
+        # (e.g. after a redeploy/crash) so their time-exit / trailing rules keep
+        # running. Broker-native SL/TP already protected them regardless.
+        self._rehydrate_positions()
+
         # Start background listener for strategy assignment changes
         self._start_strategy_listener()
 
@@ -295,6 +300,74 @@ class AccountWorker:
         finally:
             self._running = False
             logger.info("[account:%s] Worker stopped", self._account.id)
+
+    def _rehydrate_positions(self) -> None:
+        """Reload this account's still-open positions from the DB and re-register
+        them with the position monitor so engine-managed exit rules (time-exit,
+        trailing, break-even) resume after a restart.
+
+        Best-effort: a bad row is logged and skipped rather than aborting the
+        worker. Positions with no engine-managed exits, or that can't be
+        reconstructed, are simply left to their broker-native SL/TP.
+        """
+        if self._trade_persister is None or self._position_monitor is None:
+            return
+
+        try:
+            rows = self._trade_persister.fetch_open_positions(self._account.id)
+        except Exception:
+            logger.exception(
+                "[account:%s] Failed to fetch open positions for rehydration",
+                self._account.id,
+            )
+            return
+
+        if not rows:
+            return
+
+        rehydrated = 0
+        for row in rows:
+            try:
+                strategy_config = row.get("strategy_config") or {}
+                created = row.get("created_at")
+                opened = row.get("opened_at")
+                signal = Signal(
+                    id=str(row["signal_id"]),
+                    instrument=row["instrument"],
+                    direction=row["direction"],
+                    entry_price=float(row.get("entry_price") or row["fill_price"]),
+                    stop_loss=float(row["stop_loss"]),
+                    take_profit=float(row["take_profit"]),
+                    position_size=float(row["position_size"]),
+                    confidence_score=float(row.get("confidence_score") or 0.0),
+                    timeframe=row["timeframe"],
+                    order_block_id=row.get("order_block_id") or "rehydrated",
+                    strategy_id=str(row["strategy_id"]),
+                    mode=row["mode"],
+                    metadata=row.get("metadata") or {},
+                    exit_rules=strategy_config.get("exit_rules"),
+                    created_at=created.isoformat() if hasattr(created, "isoformat") else str(created),
+                )
+                self._position_monitor.rehydrate_position(
+                    position_id=int(row["broker_order_id"]),
+                    signal=signal,
+                    account=self._account,
+                    entry_price=float(row.get("fill_price") or signal.entry_price),
+                    entry_time=opened,
+                )
+                rehydrated += 1
+            except Exception:
+                logger.exception(
+                    "[account:%s] Could not rehydrate position (order=%s) — "
+                    "leaving it to broker-native SL/TP",
+                    self._account.id, row.get("broker_order_id"),
+                )
+
+        if rehydrated:
+            logger.info(
+                "[account:%s] Rehydrated %d open position(s) into the monitor",
+                self._account.id, rehydrated,
+            )
 
     def _process_one_cycle(self) -> Optional[TradeExecutionResult]:
         """Process a single consume → validate → execute cycle.

@@ -171,6 +171,75 @@ class PositionMonitor:
             exit_rules.atr_trailing_stop.enabled,
         )
 
+    def rehydrate_position(
+        self,
+        position_id: int,
+        signal: Signal,
+        account: TradingAccount,
+        entry_price: float,
+        entry_time: datetime,
+    ) -> None:
+        """Re-register a position that was open before this engine started.
+
+        Unlike track_position(), this preserves the ORIGINAL entry_time (so a
+        time-exit fires at the real deadline, not restart + duration) and takes
+        deliberately safe defaults for stateful exit rules:
+
+        - current_sl = original signal SL. Trailing re-arms from here; the
+          "only move SL in the profitable direction" guard means the SL can
+          never be pushed below the original protective level. Worst case after
+          a restart+retracement is giving back some already-trailed profit —
+          the position is never less protected than at entry.
+        - partial_close_done = True. We can't reliably tell from the broker
+          whether a partial already executed, so we never risk a DOUBLE partial
+          close. A not-yet-taken partial is skipped (safe; no shipped strategy
+          uses partial_close).
+
+        Idempotent: re-registering an already-tracked position is a no-op.
+        """
+        exit_rules = ExitRules.from_dict(signal.exit_rules)
+        if not exit_rules.has_any_enabled():
+            # No engine-managed exits → nothing to resume; broker SL/TP covers it.
+            return
+
+        with self._lock:
+            if position_id in self._positions:
+                return
+
+        tracked = TrackedPosition(
+            position_id=position_id,
+            signal=signal,
+            account=account,
+            exit_rules=exit_rules,
+            entry_time=entry_time,
+            entry_price=entry_price,
+            direction=signal.direction,
+            instrument=signal.instrument,
+            original_size=signal.position_size,
+            current_size=signal.position_size,
+            current_sl=signal.stop_loss,
+            entry_atr=self._estimate_entry_atr(signal, entry_price),
+            # Safe defaults — see docstring.
+            partial_close_done=True,
+        )
+
+        with self._lock:
+            self._positions[position_id] = tracked
+
+        logger.info(
+            "[monitor] Rehydrated position %d (%s %s) opened %s — resuming exits: "
+            "trailing=%s, break_even=%s, time_exit=%s, atr_trailing=%s "
+            "(partial_close suppressed for safety)",
+            position_id,
+            signal.direction.value,
+            signal.instrument,
+            entry_time.isoformat(),
+            exit_rules.trailing_stop.enabled,
+            exit_rules.break_even.enabled,
+            exit_rules.time_exit.enabled,
+            exit_rules.atr_trailing_stop.enabled,
+        )
+
     def untrack_position(self, position_id: int) -> None:
         """Remove a position from monitoring (e.g., closed by broker SL/TP)."""
         with self._lock:
@@ -593,9 +662,16 @@ class PositionMonitor:
         sl_distance = abs(fill_price - signal.stop_loss)
         if sl_distance == 0:
             return 0.0
-        # Try to get the ATR multiplier from signal metadata
-        metadata = getattr(signal, "metadata", {}) or {}
-        atr_mult = metadata.get("atr_sl_multiplier", 2.0)
+        # Try to get the ATR multiplier from signal metadata. metadata may be a
+        # Pydantic SignalMetadata model, a plain dict, or None — handle all
+        # three (a model has no .get(), so calling it would raise).
+        metadata = getattr(signal, "metadata", None)
+        if hasattr(metadata, "get"):
+            atr_mult = metadata.get("atr_sl_multiplier", 2.0)
+        elif metadata is not None:
+            atr_mult = getattr(metadata, "atr_sl_multiplier", 2.0)
+        else:
+            atr_mult = 2.0
         if atr_mult <= 0:
             return sl_distance
         return sl_distance / atr_mult

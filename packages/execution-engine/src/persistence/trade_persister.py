@@ -247,6 +247,48 @@ class TradePersister:
             logger.exception("TradePersister: failed to record exit: %s", exc)
             return False
 
+    def fetch_open_positions(self, account_id: str) -> list[dict]:
+        """Return still-open positions for an account, with everything needed to
+        rebuild a Signal and resume exit-rule monitoring after a restart.
+
+        Joins trades → signals (for SL/TP + signal fields) → strategies (for the
+        exit_rules config). Trades with a NULL signal_id (test injections /
+        FK-fallback rows) are excluded — without a signal we can't manage exits,
+        and the broker-native SL/TP still protects them.
+
+        Only rows that are filled, not yet closed, and carry a broker order id
+        (the contract to monitor) are returned.
+        """
+        try:
+            with self._conn() as conn, conn.cursor() as cur:
+                cur.execute(
+                    """
+                    SELECT
+                        t.broker_order_id, t.instrument, t.direction,
+                        t.fill_price, t.entry_price, t.position_size, t.opened_at,
+                        s.id AS signal_id, s.stop_loss, s.take_profit,
+                        s.confidence_score, s.timeframe, s.order_block_id,
+                        s.strategy_id, s.mode, s.metadata, s.created_at,
+                        st.config AS strategy_config
+                    FROM trades t
+                    JOIN signals s ON s.id = t.signal_id
+                    JOIN strategies st ON st.id = s.strategy_id
+                    WHERE t.account_id = %s
+                      AND t.status = 'filled'
+                      AND t.closed_at IS NULL
+                      AND t.broker_order_id IS NOT NULL
+                    """,
+                    (account_id,),
+                )
+                cols = [c.name for c in cur.description]
+                return [dict(zip(cols, row)) for row in cur.fetchall()]
+        except Exception as exc:
+            logger.exception(
+                "TradePersister: failed to fetch open positions for account %s: %s",
+                account_id, exc,
+            )
+            return []
+
     def close(self) -> None:
         """Close the connection pool (for clean shutdown)."""
         with self._lock:
