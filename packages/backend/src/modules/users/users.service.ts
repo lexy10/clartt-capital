@@ -43,6 +43,11 @@ export class UsersService {
       user.email = dto.email;
     }
 
+    if (dto.theme !== undefined) {
+      // Merge so updating only the mode (or only the accent) keeps the other.
+      user.theme = { ...(user.theme ?? {}), ...dto.theme };
+    }
+
     const saved = await this.usersRepository.save(user);
     const { passwordHash, refreshTokens, ...profile } = saved;
     return profile;

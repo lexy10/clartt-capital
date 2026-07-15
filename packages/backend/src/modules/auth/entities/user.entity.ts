@@ -26,6 +26,11 @@ export class User {
   @Column({ type: 'boolean', name: 'is_active', default: true })
   isActive: boolean;
 
+  /** Per-user UI theme (colour mode + accent). Null until the user picks one,
+   *  in which case the client falls back to its default (dark / indigo). */
+  @Column({ type: 'jsonb', nullable: true })
+  theme: { mode?: string; accent?: string } | null;
+
   @CreateDateColumn({ type: 'timestamptz', name: 'created_at' })
   createdAt: Date;
 

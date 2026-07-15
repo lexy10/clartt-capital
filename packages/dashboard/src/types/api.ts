@@ -247,6 +247,14 @@ export interface AdminUser {
   createdAt: string;
 }
 
+/** The signed-in user, as returned by GET /users/me. */
+export interface CurrentUserDto {
+  id: string;
+  email: string;
+  role: string;
+  theme?: { mode?: string; accent?: string } | null;
+}
+
 export interface ApiClient {
   auth: {
     login(credentials: LoginRequest): Promise<TokenPair>;

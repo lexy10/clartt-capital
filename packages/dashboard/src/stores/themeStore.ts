@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import { apiClient } from '../services/ApiClient';
 
 /**
  * Theme preferences.
@@ -7,11 +8,14 @@ import { create } from 'zustand';
  *   - mode:   light / dark / system   → controls the palette (data-theme)
  *   - accent: brand colour preset      → controls --accent* (data-accent)
  *
- * Preferences are per-user: they're stored in localStorage keyed by user id,
- * so different users signing in on the same browser each keep their own look.
- * A "last used" copy is also kept under a global key so the very first paint
- * (before we know who's logged in) matches what the user last chose — the
- * inline script in index.html reads that same global key to avoid a flash.
+ * Preferences are per-user and persisted to the user's DB record (PUT
+ * /users/me), so they follow the user across devices and browsers. localStorage
+ * is used as a fast cache: a per-user key, plus a global "last used" key that
+ * the inline script in index.html reads to paint the right theme before React
+ * (and the /users/me response) are ready — avoiding a flash.
+ *
+ * On login we prefer the DB value; if the user has never set one we fall back
+ * to the cached localStorage value, then to the defaults.
  */
 
 export type ThemeMode = 'light' | 'dark' | 'system';
@@ -71,16 +75,28 @@ function applyToDom(prefs: ThemePrefs) {
   root.setAttribute('data-accent', prefs.accent);
 }
 
+/** Sanitise arbitrary DB/localStorage input into valid prefs (defaults for the
+ *  rest). Guards against a value the current build no longer recognises. */
+function coercePrefs(raw: Partial<ThemePrefs> | null | undefined): ThemePrefs {
+  const mode: ThemeMode = raw?.mode === 'light' || raw?.mode === 'dark' || raw?.mode === 'system'
+    ? raw.mode : DEFAULTS.mode;
+  const accent: Accent = ACCENTS.some((a) => a.id === raw?.accent)
+    ? (raw!.accent as Accent) : DEFAULTS.accent;
+  return { mode, accent };
+}
+
 interface ThemeState extends ThemePrefs {
   /** User whose prefs are loaded (null = global/anonymous defaults). */
   userId: string | null;
   setMode: (mode: ThemeMode) => void;
   setAccent: (accent: Accent) => void;
-  /** Load the given user's saved prefs (call when the logged-in user changes). */
-  loadForUser: (userId: string | null) => void;
+  /** Load a user's saved prefs when the logged-in user changes. `dbPrefs` is
+   *  the theme stored on the user record (from /users/me); it wins over the
+   *  local cache so the choice follows the user across devices. */
+  loadForUser: (userId: string | null, dbPrefs?: Partial<ThemePrefs> | null) => void;
 }
 
-const initial: ThemePrefs = { ...DEFAULTS, ...readPrefs(GLOBAL_KEY) };
+const initial: ThemePrefs = coercePrefs(readPrefs(GLOBAL_KEY));
 applyToDom(initial);
 
 export const useThemeStore = create<ThemeState>((set, get) => {
@@ -91,11 +107,24 @@ export const useThemeStore = create<ThemeState>((set, get) => {
     });
   }
 
+  // Debounced write-back to the DB so rapid toggles collapse into one request.
+  let saveTimer: ReturnType<typeof setTimeout> | undefined;
+  const saveToServer = (prefs: ThemePrefs) => {
+    if (!get().userId) return; // not logged in — local cache only
+    clearTimeout(saveTimer);
+    saveTimer = setTimeout(() => {
+      apiClient.users.updateMe({ theme: prefs }).catch(() => {
+        /* offline / transient — the localStorage cache still holds the choice */
+      });
+    }, 400);
+  };
+
   const persist = (prefs: ThemePrefs) => {
     applyToDom(prefs);
     writePrefs(GLOBAL_KEY, prefs);
     const { userId } = get();
     if (userId) writePrefs(userKey(userId), prefs);
+    saveToServer(prefs);
   };
 
   return {
@@ -114,11 +143,14 @@ export const useThemeStore = create<ThemeState>((set, get) => {
       set({ accent });
     },
 
-    loadForUser: (userId) => {
-      const saved = userId ? readPrefs(userKey(userId)) : readPrefs(GLOBAL_KEY);
-      const prefs: ThemePrefs = { ...DEFAULTS, ...saved };
+    loadForUser: (userId, dbPrefs) => {
+      // Priority: DB (follows the user everywhere) → local cache → defaults.
+      const hasDb = dbPrefs && (dbPrefs.mode || dbPrefs.accent);
+      const source = hasDb ? dbPrefs : userId ? readPrefs(userKey(userId)) : readPrefs(GLOBAL_KEY);
+      const prefs = coercePrefs(source);
       applyToDom(prefs);
       writePrefs(GLOBAL_KEY, prefs); // keep first-paint key in sync with this user
+      if (userId) writePrefs(userKey(userId), prefs);
       set({ userId, mode: prefs.mode, accent: prefs.accent });
     },
   };

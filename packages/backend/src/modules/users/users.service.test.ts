@@ -14,6 +14,7 @@ describe('UsersService', () => {
     passwordHash: 'hashed-password',
     role: 'trader',
     isActive: true,
+    theme: null,
     createdAt: new Date('2024-01-01'),
     updatedAt: new Date('2024-01-01'),
     refreshTokens: [],
@@ -49,6 +50,7 @@ describe('UsersService', () => {
         email: 'trader@example.com',
         role: 'trader',
         isActive: true,
+        theme: null,
         createdAt: mockUser.createdAt,
         updatedAt: mockUser.updatedAt,
       });

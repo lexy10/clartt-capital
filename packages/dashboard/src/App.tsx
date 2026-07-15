@@ -4,14 +4,18 @@ import { router } from './routes';
 import { useAuthStore } from './stores/authStore';
 import { useThemeStore } from './stores/themeStore';
 
-/** Loads the logged-in user's saved theme when the user changes (and reverts
- *  to the shared default on logout). Renders nothing. */
+/** Loads the logged-in user's saved theme (from their DB record) when the user
+ *  changes, and reverts to the shared default on logout. Renders nothing. */
 function ThemeSync() {
   const userId = useAuthStore((s) => s.currentUser?.id ?? null);
+  const dbTheme = useAuthStore((s) => s.currentUser?.theme ?? null);
   const loadForUser = useThemeStore((s) => s.loadForUser);
   useEffect(() => {
-    loadForUser(userId);
-  }, [userId, loadForUser]);
+    loadForUser(userId, dbTheme);
+    // Re-run only when the user identity changes, not on every theme tweak
+    // (setMode/setAccent update currentUser.theme would otherwise re-load).
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [userId]);
   return null;
 }
 

@@ -418,6 +418,7 @@ CREATE TABLE public.users (
     password_hash character varying(255) NOT NULL,
     role character varying(50) DEFAULT 'trader'::character varying NOT NULL,
     is_active boolean DEFAULT true NOT NULL,
+    theme jsonb,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     updated_at timestamp with time zone DEFAULT now() NOT NULL
 );

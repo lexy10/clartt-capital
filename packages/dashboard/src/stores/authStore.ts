@@ -5,6 +5,7 @@ export interface CurrentUser {
   id: string;
   email: string;
   role: string; // 'admin' | 'trader' | ...
+  theme?: { mode?: string; accent?: string } | null;
 }
 
 interface AuthState {

@@ -29,6 +29,7 @@ import type {
   Instrument,
   AccountInstrument,
   AdminUser,
+  CurrentUserDto,
   AccountStrategy,
   CreateInstrumentDto,
   UpdateInstrumentDto,
@@ -196,12 +197,12 @@ export function createApiClient(baseURL?: string): ApiClient {
     },
 
     users: {
-      async me(): Promise<{ id: string; email: string; role: string }> {
-        const { data } = await http.get<{ id: string; email: string; role: string }>('/users/me');
+      async me(): Promise<CurrentUserDto> {
+        const { data } = await http.get<CurrentUserDto>('/users/me');
         return data;
       },
-      async updateMe(dto: { email?: string }): Promise<{ id: string; email: string; role: string }> {
-        const { data } = await http.put<{ id: string; email: string; role: string }>('/users/me', dto);
+      async updateMe(dto: { email?: string; theme?: { mode?: string; accent?: string } }): Promise<CurrentUserDto> {
+        const { data } = await http.put<CurrentUserDto>('/users/me', dto);
         return data;
       },
       async changeMyPassword(currentPassword: string, newPassword: string): Promise<void> {
