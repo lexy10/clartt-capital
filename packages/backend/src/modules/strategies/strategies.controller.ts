@@ -25,21 +25,31 @@ import { Roles } from '../../common/decorators/roles.decorator';
 
 // Reads + backtests are open to any authenticated user (traders view and can
 // test). Editing the strategy catalogue and algorithms requires admin+.
+function isAdminOrAbove(req: any): boolean {
+  const role = req?.user?.role;
+  return role === 'admin' || role === 'superadmin';
+}
+
 @Controller('strategies')
 export class StrategiesController {
   constructor(private readonly strategiesService: StrategiesService) {}
 
   @Get()
-  findAll() {
-    return this.strategiesService.findAll();
+  @UseGuards(JwtAuthGuard)
+  findAll(@Request() req: any) {
+    return isAdminOrAbove(req) ? this.strategiesService.findAll() : this.strategiesService.findAllPublic();
   }
 
   @Get('algorithms')
-  getAlgorithms() {
-    return this.strategiesService.getAlgorithms();
+  @UseGuards(JwtAuthGuard)
+  getAlgorithms(@Request() req: any) {
+    return isAdminOrAbove(req) ? this.strategiesService.getAlgorithms() : this.strategiesService.getAlgorithmsPublic();
   }
 
+  // Algorithm source is the actual logic — admin+ only. Traders never see it.
   @Get('algorithms/:name/source')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('admin')
   getAlgorithmSource(@Param('name') name: string) {
     return this.strategiesService.getAlgorithmSource(name);
   }

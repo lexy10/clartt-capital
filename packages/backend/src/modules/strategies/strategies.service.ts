@@ -44,6 +44,37 @@ export class StrategiesService {
     });
   }
 
+  /** Trader-safe strategy list: keeps identity + which instruments/timeframes
+   *  it trades, but strips the tuned "sauce" (algorithm_params, risk_settings,
+   *  exit_rules). Traders can still verify performance by running a backtest. */
+  async findAllPublic() {
+    const strategies = await this.findAll();
+    return strategies.map((s) => {
+      const cfg = (s.config ?? {}) as Record<string, unknown>;
+      return {
+        id: s.id,
+        name: s.name,
+        algorithm: s.algorithm,
+        enabled: s.enabled,
+        config: {
+          instruments: cfg.instruments ?? [],
+          entry_timeframe: cfg.entry_timeframe ?? null,
+          higher_timeframe: cfg.higher_timeframe ?? null,
+          trend_timeframe: cfg.trend_timeframe ?? null,
+          mode: cfg.mode ?? null,
+          min_confidence_score: cfg.min_confidence_score ?? null,
+        },
+        createdAt: s.createdAt,
+      };
+    });
+  }
+
+  /** Trader-safe algorithm list: name + description only, no params/source. */
+  async getAlgorithmsPublic(): Promise<Array<Pick<AlgorithmInfo, 'name' | 'description'>>> {
+    const algos = await this.getAlgorithms();
+    return algos.map(({ name, description }) => ({ name, description }));
+  }
+
   async runBacktest(userId: string, config: BacktestConfigDto) {
     const strategy = await this.strategiesRepository.findOne({
       where: { id: config.strategyId },

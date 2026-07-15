@@ -77,7 +77,6 @@ const navSections = [
       },
       {
         id: 'strategy',
-        adminOnly: true,
         path: ROUTES.STRATEGY,
         label: 'Strategies',
         icon: (
@@ -102,7 +101,6 @@ const navSections = [
       },
       {
         id: 'algorithms',
-        adminOnly: true,
         path: ROUTES.ALGORITHMS,
         label: 'Algorithms',
         icon: (

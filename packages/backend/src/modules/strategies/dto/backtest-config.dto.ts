@@ -1,7 +1,12 @@
-import { IsUUID, IsObject, IsOptional, IsString } from 'class-validator';
+import { IsObject, IsOptional, IsString, Matches } from 'class-validator';
+
+// UUID by shape, not version — some seeded strategies have hand-crafted IDs
+// whose version nibble isn't 4 (see set-account-strategies.dto), so @IsUUID('4')
+// / @IsUUID() would 400 a backtest on e.g. V25 Structure Scalper.
+const UUID_SHAPE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 export class BacktestConfigDto {
-  @IsUUID()
+  @Matches(UUID_SHAPE, { message: 'strategyId must be a UUID' })
   strategyId: string;
 
   @IsString()

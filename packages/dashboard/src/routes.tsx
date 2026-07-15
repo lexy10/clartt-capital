@@ -4,6 +4,7 @@ import AuthGuard from './components/AuthGuard';
 import AdminRoute, { SuperAdminRoute } from './components/AdminRoute';
 import LayoutShell from './components/LayoutShell';
 import LoadingFallback from './components/LoadingFallback';
+import { useAuthStore } from './stores/authStore';
 
 const LoginPage = lazy(() => import('./components/LoginPage'));
 const LiveDeskPage = lazy(() => import('./components/LiveDeskPage'));
@@ -21,11 +22,26 @@ const SystemHealthPanel = lazy(() => import('./components/SystemHealthPanel'));
 const AgentsPage = lazy(() => import('./components/AgentsPage'));
 const UsersPage = lazy(() => import('./components/UsersPage'));
 const ProfilePage = lazy(() => import('./components/ProfilePage'));
+const StrategyCatalog = lazy(() => import('./components/StrategyCatalog'));
+const AlgorithmCatalog = lazy(() => import('./components/AlgorithmCatalog'));
 
 function withSuspense(Component: ComponentType) {
   return (
     <Suspense fallback={<LoadingFallback />}>
       <Component />
+    </Suspense>
+  );
+}
+
+// Render the full management page for admins, or the read-only trader
+// catalogue otherwise. Traders can view + backtest but not edit or see config.
+function RoleView({ admin: Admin, trader: Trader }: { admin: ComponentType; trader: ComponentType }) {
+  const role = useAuthStore((s) => s.currentUser?.role);
+  const isAdmin = role === 'admin' || role === 'superadmin';
+  const C = isAdmin ? Admin : Trader;
+  return (
+    <Suspense fallback={<LoadingFallback />}>
+      <C />
     </Suspense>
   );
 }
@@ -52,8 +68,10 @@ export const router = createBrowserRouter([
           { path: 'reconciliation', element: withSuspense(ReconciliationPage) },
           { path: 'events', element: withSuspense(EventTimeline) },
           { path: 'profile', element: withSuspense(ProfilePage) },
-          // Config + system pages are admin-only. AdminRoute hard-bounces
-          // non-admins back to "/" even if they hit the URLs directly.
+          // Strategies + Algorithms: full management for admins, read-only
+          // catalogue (view + backtest, no config/source) for traders.
+          { path: 'strategy', element: <RoleView admin={StrategiesPage} trader={StrategyCatalog} /> },
+          { path: 'admin/algorithms', element: <RoleView admin={AlgorithmsPage} trader={AlgorithmCatalog} /> },
           // User management is super-admin only.
           {
             element: <SuperAdminRoute />,
@@ -61,12 +79,11 @@ export const router = createBrowserRouter([
               { path: 'admin/users', element: withSuspense(UsersPage) },
             ],
           },
+          // Instruments + system pages stay admin-only.
           {
             element: <AdminRoute />,
             children: [
-              { path: 'strategy', element: withSuspense(StrategiesPage) },
               { path: 'admin/instruments', element: withSuspense(InstrumentsPage) },
-              { path: 'admin/algorithms', element: withSuspense(AlgorithmsPage) },
               { path: 'health', element: withSuspense(SystemHealthPanel) },
               { path: 'agents', element: withSuspense(AgentsPage) },
             ],
