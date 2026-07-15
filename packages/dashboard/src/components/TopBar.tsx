@@ -3,6 +3,7 @@ import ConnectionStatus from './ConnectionStatus';
 import AutopilotToggle from './AutopilotToggle';
 import UserGreeting from './UserGreeting';
 import UserSwitcher from './UserSwitcher';
+import ThemeToggle from './ThemeToggle';
 
 /**
  * Top bar shown above every page.
@@ -24,6 +25,7 @@ const TopBar: FC = () => {
       </div>
       <div className="top-bar-right">
         <UserSwitcher />
+        <ThemeToggle />
         <AutopilotToggle />
       </div>
     </div>

@@ -1,6 +1,7 @@
 import { type FC, useState } from 'react';
 import { apiClient } from '../services/ApiClient';
 import { useAuthStore } from '../stores/authStore';
+import ThemePicker from './ThemePicker';
 
 const ProfilePage: FC = () => {
   const currentUser = useAuthStore((s) => s.currentUser);
@@ -60,6 +61,15 @@ const ProfilePage: FC = () => {
           <span style={muted}>Role</span>
           <span style={{ fontSize: 12, textTransform: 'capitalize' }}>{currentUser?.role ?? '—'}</span>
         </div>
+      </div>
+
+      {/* Appearance */}
+      <div style={card}>
+        <h3 style={cardTitle}>Appearance</h3>
+        <p style={{ margin: '-4px 0 12px', fontSize: 11, color: 'var(--text-muted)' }}>
+          Your theme is saved to your account and follows you on this browser.
+        </p>
+        <ThemePicker />
       </div>
 
       {/* Email */}

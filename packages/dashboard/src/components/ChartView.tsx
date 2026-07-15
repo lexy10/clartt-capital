@@ -16,6 +16,27 @@ import type { Candle } from '../types/candle';
 import type { Signal } from '../types/signal';
 import type { Timeframe } from '../types/timeframe';
 import type { OverlayDirection, TradeMarker as AutopilotTradeMarker } from '../types/autopilot';
+import { useThemeStore } from '../stores/themeStore';
+
+/** Read the active theme's chart colours from CSS variables (falls back to the
+ *  dark palette if a variable is missing). Lets the chart follow light/dark. */
+function readChartTheme() {
+  const s = typeof document !== 'undefined' ? getComputedStyle(document.documentElement) : null;
+  const v = (name: string, fallback: string) => {
+    const raw = s?.getPropertyValue(name).trim();
+    return raw ? raw : fallback;
+  };
+  return {
+    bg: v('--chart-bg', '#0d1117'),
+    text: v('--text-secondary', '#8b949e'),
+    grid: v('--chart-grid', '#1c2128'),
+    crosshair: v('--chart-crosshair', '#484f58'),
+    border: v('--border-primary', '#30363d'),
+    up: v('--chart-candle-up', '#3fb950'),
+    down: v('--chart-candle-down', '#f85149'),
+    labelBg: v('--bg-surface', '#21262d'),
+  };
+}
 
 interface OrderBlockZone {
   id: string;
@@ -114,39 +135,40 @@ const ChartView: FC<ChartViewProps> = ({
   useEffect(() => {
     if (!containerRef.current) return;
 
+    const t = readChartTheme();
     const chart = createChart(containerRef.current, {
       layout: {
-        background: { type: ColorType.Solid, color: '#0d1117' },
-        textColor: '#8b949e',
+        background: { type: ColorType.Solid, color: t.bg },
+        textColor: t.text,
         fontFamily:
           "'JetBrains Mono', 'Fira Code', 'Cascadia Code', monospace",
       },
       grid: {
-        vertLines: { color: '#1c2128' },
-        horzLines: { color: '#1c2128' },
+        vertLines: { color: t.grid },
+        horzLines: { color: t.grid },
       },
       crosshair: {
         mode: CrosshairMode.Normal,
-        vertLine: { color: '#484f58', labelBackgroundColor: '#21262d' },
-        horzLine: { color: '#484f58', labelBackgroundColor: '#21262d' },
+        vertLine: { color: t.crosshair, labelBackgroundColor: t.labelBg },
+        horzLine: { color: t.crosshair, labelBackgroundColor: t.labelBg },
       },
       rightPriceScale: {
-        borderColor: '#30363d',
+        borderColor: t.border,
       },
       timeScale: {
-        borderColor: '#30363d',
+        borderColor: t.border,
         timeVisible: true,
         secondsVisible: false,
       },
     });
 
     const series = chart.addCandlestickSeries({
-      upColor: '#3fb950',
-      downColor: '#f85149',
-      borderUpColor: '#3fb950',
-      borderDownColor: '#f85149',
-      wickUpColor: '#3fb950',
-      wickDownColor: '#f85149',
+      upColor: t.up,
+      downColor: t.down,
+      borderUpColor: t.up,
+      borderDownColor: t.down,
+      wickUpColor: t.up,
+      wickDownColor: t.down,
     });
 
     chartRef.current = chart;
@@ -199,6 +221,29 @@ const ChartView: FC<ChartViewProps> = ({
       timeScale: { secondsVisible: false },
     });
   }, [timeframe]);
+
+  // Recolour the chart live when the user switches light/dark or accent.
+  const themeMode = useThemeStore((s) => s.mode);
+  const themeAccent = useThemeStore((s) => s.accent);
+  useEffect(() => {
+    if (!chartRef.current) return;
+    const t = readChartTheme();
+    chartRef.current.applyOptions({
+      layout: { background: { type: ColorType.Solid, color: t.bg }, textColor: t.text },
+      grid: { vertLines: { color: t.grid }, horzLines: { color: t.grid } },
+      crosshair: {
+        vertLine: { color: t.crosshair, labelBackgroundColor: t.labelBg },
+        horzLine: { color: t.crosshair, labelBackgroundColor: t.labelBg },
+      },
+      rightPriceScale: { borderColor: t.border },
+      timeScale: { borderColor: t.border },
+    });
+    seriesRef.current?.applyOptions({
+      upColor: t.up, downColor: t.down,
+      borderUpColor: t.up, borderDownColor: t.down,
+      wickUpColor: t.up, wickDownColor: t.down,
+    });
+  }, [themeMode, themeAccent]);
 
   // Track the number of candles from the last setData call so we can
   // distinguish a full REST fetch (many candles) from a single WebSocket

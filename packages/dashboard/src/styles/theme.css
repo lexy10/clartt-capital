@@ -1,5 +1,51 @@
+/* ────────────────────────────────────────────────────────────────────────
+   Theming
+   --------------------------------------------------------------------------
+   Structural tokens (spacing, radius, fonts, transitions) live on :root and
+   are shared by every theme. The colour palette is theme-scoped:
+
+     :root                        → dark palette (default, no attribute needed)
+     :root[data-theme="light"]    → light palette
+
+   Accent colour is a separate axis so a user can pick, say, an emerald accent
+   in either light or dark mode:
+
+     :root[data-accent="emerald"] → overrides --accent* only
+
+   themeStore.ts stamps data-theme / data-accent onto <html>. An inline script
+   in index.html applies the persisted choice before React mounts (no FOUC).
+   ──────────────────────────────────────────────────────────────────────── */
+
 :root {
-  /* Background — ultra-dark with subtle blue undertone */
+  /* ── Structural (theme-independent) ─────────────────────────────────── */
+  --sidebar-width: 200px;
+  --panel-width: 340px;
+  --header-height: 44px;
+
+  --font-mono: 'JetBrains Mono', 'SF Mono', 'Fira Code', monospace;
+  --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+
+  --radius-sm: 6px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+  --radius-xl: 16px;
+
+  --transition-fast: 150ms cubic-bezier(0.4, 0, 0.2, 1);
+  --transition-normal: 250ms cubic-bezier(0.4, 0, 0.2, 1);
+  --transition-slow: 400ms cubic-bezier(0.4, 0, 0.2, 1);
+
+  --glass-blur: 20px;
+
+  /* ── Accent — indigo/violet (default preset) ────────────────────────── */
+  --accent: #818cf8;
+  --accent-hover: #a5b4fc;
+  --accent-dim: rgba(129, 140, 248, 0.1);
+  --accent-glow: rgba(129, 140, 248, 0.2);
+  --border-glow: rgba(129, 140, 248, 0.15);
+  --chart-volume: rgba(129, 140, 248, 0.15);
+  --shadow-glow: 0 0 24px rgba(129, 140, 248, 0.08);
+
+  /* ── Dark palette (default) ─────────────────────────────────────────── */
   --bg-primary: #06060a;
   --bg-secondary: #0a0a10;
   --bg-tertiary: #0e0e16;
@@ -7,23 +53,13 @@
   --bg-hover: #1a1a28;
   --bg-card: rgba(13, 13, 20, 0.8);
 
-  /* Text — high contrast with subtle warmth */
   --text-primary: #ededf5;
   --text-secondary: #8888a0;
   --text-muted: #4a4a62;
 
-  /* Borders — barely visible, glass-like */
   --border-primary: rgba(255, 255, 255, 0.05);
   --border-secondary: rgba(255, 255, 255, 0.025);
-  --border-glow: rgba(129, 140, 248, 0.15);
 
-  /* Accent — indigo/violet */
-  --accent: #818cf8;
-  --accent-hover: #a5b4fc;
-  --accent-dim: rgba(129, 140, 248, 0.1);
-  --accent-glow: rgba(129, 140, 248, 0.2);
-
-  /* Trading */
   --success: #22d3a7;
   --success-bg: rgba(34, 211, 167, 0.08);
   --success-border: rgba(34, 211, 167, 0.15);
@@ -33,46 +69,113 @@
   --warning: #f5c542;
   --warning-bg: rgba(245, 197, 66, 0.08);
 
-  /* Chart */
   --chart-bg: #06060a;
   --chart-grid: #0e0e16;
   --chart-crosshair: #4a4a62;
   --chart-candle-up: #22d3a7;
   --chart-candle-down: #ef6b6b;
-  --chart-volume: rgba(129, 140, 248, 0.15);
 
-  /* Order block overlay */
   --ob-bullish: rgba(34, 211, 167, 0.06);
   --ob-bearish: rgba(239, 107, 107, 0.06);
 
-  /* Spacing */
-  --sidebar-width: 200px;
-  --panel-width: 340px;
-  --header-height: 44px;
-
-  /* Typography */
-  --font-mono: 'JetBrains Mono', 'SF Mono', 'Fira Code', monospace;
-  --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-
-  /* Radius */
-  --radius-sm: 6px;
-  --radius-md: 8px;
-  --radius-lg: 12px;
-  --radius-xl: 16px;
-
-  /* Transitions */
-  --transition-fast: 150ms cubic-bezier(0.4, 0, 0.2, 1);
-  --transition-normal: 250ms cubic-bezier(0.4, 0, 0.2, 1);
-  --transition-slow: 400ms cubic-bezier(0.4, 0, 0.2, 1);
-
-  /* Glass — deeper, more premium */
   --glass-bg: rgba(10, 10, 16, 0.8);
-  --glass-blur: 20px;
   --glass-border: rgba(255, 255, 255, 0.04);
 
-  /* Shadows */
+  /* Foreground-tinted overlays for hovers, stripes & scrollbars. On dark these
+     are subtle white; on light they flip to subtle ink (see light block). */
+  --overlay-soft: rgba(255, 255, 255, 0.04);
+  --overlay-strong: rgba(255, 255, 255, 0.09);
+  /* Opaque floating surface (dropdowns, popovers). */
+  --panel-bg: rgba(15, 15, 20, 0.96);
+
   --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.4);
   --shadow-md: 0 4px 16px rgba(0, 0, 0, 0.5);
   --shadow-lg: 0 8px 40px rgba(0, 0, 0, 0.6);
-  --shadow-glow: 0 0 24px rgba(129, 140, 248, 0.08);
+}
+
+/* ── Light palette ────────────────────────────────────────────────────── */
+:root[data-theme='light'] {
+  --bg-primary: #f6f7fb;
+  --bg-secondary: #ffffff;
+  --bg-tertiary: #f1f2f7;
+  --bg-surface: #ffffff;
+  --bg-hover: #eceef5;
+  --bg-card: rgba(255, 255, 255, 0.9);
+
+  --text-primary: #1a1c26;
+  --text-secondary: #565a6e;
+  --text-muted: #9a9eb2;
+
+  --border-primary: rgba(15, 18, 34, 0.1);
+  --border-secondary: rgba(15, 18, 34, 0.06);
+
+  --success: #0ea471;
+  --success-bg: rgba(14, 164, 113, 0.1);
+  --success-border: rgba(14, 164, 113, 0.22);
+  --danger: #dc4a4a;
+  --danger-bg: rgba(220, 74, 74, 0.09);
+  --danger-border: rgba(220, 74, 74, 0.2);
+  --warning: #c98a06;
+  --warning-bg: rgba(201, 138, 6, 0.1);
+
+  --chart-bg: #ffffff;
+  --chart-grid: #eceef5;
+  --chart-crosshair: #9a9eb2;
+  --chart-candle-up: #0ea471;
+  --chart-candle-down: #dc4a4a;
+
+  --ob-bullish: rgba(14, 164, 113, 0.08);
+  --ob-bearish: rgba(220, 74, 74, 0.08);
+
+  --glass-bg: rgba(255, 255, 255, 0.75);
+  --glass-border: rgba(15, 18, 34, 0.08);
+
+  --overlay-soft: rgba(20, 23, 40, 0.04);
+  --overlay-strong: rgba(20, 23, 40, 0.1);
+  --panel-bg: #ffffff;
+
+  --shadow-sm: 0 1px 2px rgba(20, 23, 40, 0.06);
+  --shadow-md: 0 4px 16px rgba(20, 23, 40, 0.08);
+  --shadow-lg: 0 8px 40px rgba(20, 23, 40, 0.12);
+}
+
+/* ── Accent presets (apply in both light & dark) ──────────────────────── */
+:root[data-accent='emerald'] {
+  --accent: #34d399;
+  --accent-hover: #6ee7b7;
+  --accent-dim: rgba(52, 211, 153, 0.1);
+  --accent-glow: rgba(52, 211, 153, 0.2);
+  --border-glow: rgba(52, 211, 153, 0.15);
+  --chart-volume: rgba(52, 211, 153, 0.15);
+  --shadow-glow: 0 0 24px rgba(52, 211, 153, 0.08);
+}
+
+:root[data-accent='sky'] {
+  --accent: #38bdf8;
+  --accent-hover: #7dd3fc;
+  --accent-dim: rgba(56, 189, 248, 0.1);
+  --accent-glow: rgba(56, 189, 248, 0.2);
+  --border-glow: rgba(56, 189, 248, 0.15);
+  --chart-volume: rgba(56, 189, 248, 0.15);
+  --shadow-glow: 0 0 24px rgba(56, 189, 248, 0.08);
+}
+
+:root[data-accent='amber'] {
+  --accent: #fbbf24;
+  --accent-hover: #fcd34d;
+  --accent-dim: rgba(251, 191, 36, 0.1);
+  --accent-glow: rgba(251, 191, 36, 0.2);
+  --border-glow: rgba(251, 191, 36, 0.15);
+  --chart-volume: rgba(251, 191, 36, 0.15);
+  --shadow-glow: 0 0 24px rgba(251, 191, 36, 0.08);
+}
+
+:root[data-accent='rose'] {
+  --accent: #fb7185;
+  --accent-hover: #fda4af;
+  --accent-dim: rgba(251, 113, 133, 0.1);
+  --accent-glow: rgba(251, 113, 133, 0.2);
+  --border-glow: rgba(251, 113, 133, 0.15);
+  --chart-volume: rgba(251, 113, 133, 0.15);
+  --shadow-glow: 0 0 24px rgba(251, 113, 133, 0.08);
 }

@@ -1,6 +1,19 @@
-import { Component, type ReactNode, type ErrorInfo } from 'react';
+import { Component, type ReactNode, type ErrorInfo, useEffect } from 'react';
 import { RouterProvider } from 'react-router-dom';
 import { router } from './routes';
+import { useAuthStore } from './stores/authStore';
+import { useThemeStore } from './stores/themeStore';
+
+/** Loads the logged-in user's saved theme when the user changes (and reverts
+ *  to the shared default on logout). Renders nothing. */
+function ThemeSync() {
+  const userId = useAuthStore((s) => s.currentUser?.id ?? null);
+  const loadForUser = useThemeStore((s) => s.loadForUser);
+  useEffect(() => {
+    loadForUser(userId);
+  }, [userId, loadForUser]);
+  return null;
+}
 
 class ErrorBoundary extends Component<{ children: ReactNode }, { error: Error | null }> {
   state = { error: null as Error | null };
@@ -21,6 +34,7 @@ class ErrorBoundary extends Component<{ children: ReactNode }, { error: Error | 
 function App() {
   return (
     <ErrorBoundary>
+      <ThemeSync />
       <RouterProvider router={router} />
     </ErrorBoundary>
   );

@@ -278,7 +278,7 @@
   gap: 12px;
   padding: 8px 10px;
   border-radius: var(--radius-sm);
-  background: rgba(255, 255, 255, 0.025);
+  background: var(--overlay-soft);
 }
 
 .live-desk-list-row > div {
@@ -308,7 +308,7 @@
   padding: 10px;
   border-left: 2px solid var(--accent);
   border-radius: var(--radius-sm);
-  background: rgba(255, 255, 255, 0.025);
+  background: var(--overlay-soft);
 }
 
 .live-desk-signal-head,
@@ -344,7 +344,7 @@
 .live-desk-empty {
   padding: 22px 12px;
   border-radius: var(--radius-sm);
-  background: rgba(255, 255, 255, 0.02);
+  background: var(--overlay-soft);
   color: var(--text-muted);
   text-align: center;
   font-size: 12px;
