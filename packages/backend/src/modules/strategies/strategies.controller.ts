@@ -20,7 +20,11 @@ import { BacktestConfigDto } from './dto/backtest-config.dto';
 import { CreateStrategyDto } from './dto/create-strategy.dto';
 import { UpdateStrategyDto } from './dto/update-strategy.dto';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
+import { RolesGuard } from '../../common/guards/roles.guard';
+import { Roles } from '../../common/decorators/roles.decorator';
 
+// Reads + backtests are open to any authenticated user (traders view and can
+// test). Editing the strategy catalogue and algorithms requires admin+.
 @Controller('strategies')
 export class StrategiesController {
   constructor(private readonly strategiesService: StrategiesService) {}
@@ -41,14 +45,16 @@ export class StrategiesController {
   }
 
   @Post('algorithms/upload')
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('admin')
   @UseInterceptors(FileInterceptor('file'))
   uploadAlgorithm(@UploadedFile() file: any) {
     return this.strategiesService.uploadAlgorithm(file);
   }
 
   @Patch('algorithms/:name/source')
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('admin')
   updateAlgorithmSource(
     @Param('name') name: string,
     @Body('source') source: string,
@@ -57,14 +63,16 @@ export class StrategiesController {
   }
 
   @Delete('algorithms/:name')
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('admin')
   @HttpCode(204)
   deleteAlgorithm(@Param('name') name: string) {
     return this.strategiesService.deleteAlgorithm(name);
   }
 
   @Post()
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('admin')
   create(@Request() req: any, @Body() dto: CreateStrategyDto) {
     return this.strategiesService.create(dto, req.user.id);
   }
@@ -76,7 +84,8 @@ export class StrategiesController {
   }
 
   @Patch(':id')
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('admin')
   update(
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: UpdateStrategyDto,
@@ -85,7 +94,8 @@ export class StrategiesController {
   }
 
   @Delete(':id')
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('admin')
   @HttpCode(204)
   remove(@Param('id', ParseUUIDPipe) id: string) {
     return this.strategiesService.remove(id);

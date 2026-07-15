@@ -14,9 +14,13 @@ import {
 } from '@nestjs/common';
 import { InstrumentsService } from './instruments.service';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
+import { RolesGuard } from '../../common/guards/roles.guard';
+import { Roles } from '../../common/decorators/roles.decorator';
 import { CreateInstrumentDto } from './dto/create-instrument.dto';
 import { UpdateInstrumentDto } from './dto/update-instrument.dto';
 
+// Reads are open to any authenticated user (traders view instruments).
+// Mutations require admin or above — traders can't edit the catalogue.
 @Controller('instruments')
 export class InstrumentsController {
   constructor(private readonly instrumentsService: InstrumentsService) {}
@@ -35,13 +39,15 @@ export class InstrumentsController {
   }
 
   @Post()
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('admin')
   create(@Body() dto: CreateInstrumentDto) {
     return this.instrumentsService.create(dto);
   }
 
   @Patch(':id')
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('admin')
   update(
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: UpdateInstrumentDto,
@@ -50,7 +56,8 @@ export class InstrumentsController {
   }
 
   @Delete(':id')
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('admin')
   @HttpCode(HttpStatus.NO_CONTENT)
   softDelete(@Param('id', ParseUUIDPipe) id: string) {
     return this.instrumentsService.softDelete(id);

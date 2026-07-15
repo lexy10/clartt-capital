@@ -3,22 +3,33 @@ import {
   ConflictException,
   NotFoundException,
   BadRequestException,
+  Logger,
+  Inject,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { In, Repository } from 'typeorm';
+import Redis from 'ioredis';
 import { Instrument } from './entities/instrument.entity';
 import { AccountInstrument } from './entities/account-instrument.entity';
 import { CreateInstrumentDto } from './dto/create-instrument.dto';
 import { UpdateInstrumentDto } from './dto/update-instrument.dto';
 import { AccountInstrumentItemDto } from './dto/set-account-instruments.dto';
+import { REDIS_CLIENT } from '../../common/modules/redis.module';
+
+/** Redis channel the market-data BackfillService listens on to backfill a
+ *  newly-activated instrument. Decouples the two modules (no circular dep). */
+export const INSTRUMENT_ACTIVATED_CHANNEL = 'instrument:activated';
 
 @Injectable()
 export class InstrumentsService {
+  private readonly logger = new Logger(InstrumentsService.name);
+
   constructor(
     @InjectRepository(Instrument)
     private readonly instrumentRepo: Repository<Instrument>,
     @InjectRepository(AccountInstrument)
     private readonly accountInstrumentRepo: Repository<AccountInstrument>,
+    @Inject(REDIS_CLIENT) private readonly redis: Redis,
   ) {}
 
   async findAll(): Promise<Instrument[]> {
@@ -52,8 +63,22 @@ export class InstrumentsService {
 
   async update(id: string, dto: UpdateInstrumentDto): Promise<Instrument> {
     const instrument = await this.findById(id);
+    const wasActive = instrument.isActive;
     Object.assign(instrument, dto);
-    return this.instrumentRepo.save(instrument);
+    const saved = await this.instrumentRepo.save(instrument);
+
+    // Newly activated → signal the market-data BackfillService (over Redis, to
+    // avoid a module circular dep) to gap-fill this instrument's history and
+    // add it to the live stream. It only backfills instruments that aren't
+    // already fresh, so this is safe/idempotent.
+    if (!wasActive && saved.isActive && saved.derivSymbol) {
+      this.logger.log(`Instrument ${saved.symbol} activated — requesting backfill`);
+      this.redis
+        .publish(INSTRUMENT_ACTIVATED_CHANNEL, saved.symbol)
+        .catch((err) => this.logger.error(`Failed to publish activation for ${saved.symbol}: ${err.message}`));
+    }
+
+    return saved;
   }
 
   async softDelete(id: string): Promise<Instrument> {

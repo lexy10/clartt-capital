@@ -49,15 +49,12 @@ export const router = createBrowserRouter([
           { path: 'signals', element: withSuspense(SignalsPage) },
           { path: 'positions', element: withSuspense(PositionsPage) },
           { path: 'accounts', element: withSuspense(AccountsPage) },
-          { path: 'strategy', element: withSuspense(StrategiesPage) },
-          { path: 'admin/instruments', element: withSuspense(InstrumentsPage) },
-          { path: 'admin/algorithms', element: withSuspense(AlgorithmsPage) },
           { path: 'reconciliation', element: withSuspense(ReconciliationPage) },
           { path: 'events', element: withSuspense(EventTimeline) },
           { path: 'profile', element: withSuspense(ProfilePage) },
-          // System pages are admin-only. The AdminRoute guard hard-bounces
+          // Config + system pages are admin-only. AdminRoute hard-bounces
           // non-admins back to "/" even if they hit the URLs directly.
-          // User management is super-admin only; the ops pages are admin+.
+          // User management is super-admin only.
           {
             element: <SuperAdminRoute />,
             children: [
@@ -67,6 +64,9 @@ export const router = createBrowserRouter([
           {
             element: <AdminRoute />,
             children: [
+              { path: 'strategy', element: withSuspense(StrategiesPage) },
+              { path: 'admin/instruments', element: withSuspense(InstrumentsPage) },
+              { path: 'admin/algorithms', element: withSuspense(AlgorithmsPage) },
               { path: 'health', element: withSuspense(SystemHealthPanel) },
               { path: 'agents', element: withSuspense(AgentsPage) },
             ],

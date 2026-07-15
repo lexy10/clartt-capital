@@ -20,6 +20,7 @@ const UsersPage: FC = () => {
   const [busyId, setBusyId] = useState<string | null>(null);
   const [showCreate, setShowCreate] = useState(false);
   const [resetFor, setResetFor] = useState<AdminUser | null>(null);
+  const [pendingRole, setPendingRole] = useState<{ user: AdminUser; role: string } | null>(null);
 
   const load = useCallback(async () => {
     setError(null);
@@ -40,8 +41,15 @@ const UsersPage: FC = () => {
     refreshUsers().catch(() => {});
   }, [load, refreshUsers]);
 
-  const handleRole = async (u: AdminUser, role: string) => {
-    if (role === u.role) return;
+  // Selecting a new role opens a confirmation rather than applying instantly —
+  // a role change is significant (grants/removes powers).
+  const requestRole = (u: AdminUser, role: string) => {
+    if (role !== u.role) setPendingRole({ user: u, role });
+  };
+
+  const confirmRole = async () => {
+    if (!pendingRole) return;
+    const { user: u, role } = pendingRole;
     setBusyId(u.id);
     setError(null);
     try {
@@ -51,6 +59,7 @@ const UsersPage: FC = () => {
       setError(err instanceof Error ? err.message : 'Failed to update role');
     }
     setBusyId(null);
+    setPendingRole(null);
   };
 
   const handleActive = async (u: AdminUser) => {
@@ -110,9 +119,9 @@ const UsersPage: FC = () => {
                       <select
                         value={u.role}
                         disabled={busy}
-                        onChange={(e) => handleRole(u, e.target.value)}
+                        onChange={(e) => requestRole(u, e.target.value)}
                         style={select}
-                        title={isSelf && u.role === 'admin' ? "You can't remove your own admin role" : undefined}
+                        title={isSelf && u.role === 'superadmin' ? "You can't remove your own super-admin role" : undefined}
                       >
                         {ROLES.map((r) => <option key={r} value={r}>{r}</option>)}
                       </select>
@@ -156,6 +165,31 @@ const UsersPage: FC = () => {
           onClose={() => setResetFor(null)}
           onDone={() => setResetFor(null)}
         />
+      )}
+      {pendingRole && (
+        <Modal title="Change role" onClose={() => setPendingRole(null)}>
+          <p style={{ fontSize: 12, color: 'var(--text-secondary)', lineHeight: 1.6 }}>
+            Change <strong>{pendingRole.user.email}</strong> from{' '}
+            <span style={roleChip}>{pendingRole.user.role}</span> to{' '}
+            <span style={roleChip}>{pendingRole.role}</span>?
+            {pendingRole.role === 'superadmin' && (
+              <><br /><span style={{ color: 'var(--warning)' }}>
+                Super admins can impersonate any user and manage all users.
+              </span></>
+            )}
+            {pendingRole.role === 'trader' && pendingRole.user.role !== 'trader' && (
+              <><br /><span style={{ color: 'var(--text-muted)' }}>
+                They will lose admin access.
+              </span></>
+            )}
+          </p>
+          <div style={modalFooter}>
+            <button onClick={() => setPendingRole(null)} style={ghostBtn}>Cancel</button>
+            <button onClick={confirmRole} disabled={busyId === pendingRole.user.id} style={primaryBtn}>
+              {busyId === pendingRole.user.id ? 'Applying…' : 'Confirm change'}
+            </button>
+          </div>
+        </Modal>
       )}
     </div>
   );
@@ -266,6 +300,7 @@ const warnBtn: React.CSSProperties = { ...ghostBtn, color: 'var(--warning)', bor
 const successBtn: React.CSSProperties = { ...ghostBtn, color: 'var(--success)', borderColor: 'var(--success)' };
 const select: React.CSSProperties = { background: 'var(--bg-surface)', color: 'var(--text-primary)', border: '1px solid var(--glass-border)', borderRadius: 'var(--radius-sm)', fontSize: 11, padding: '4px 8px' };
 const selfTag: React.CSSProperties = { marginLeft: 6, fontSize: 9, color: 'var(--accent)', border: '1px solid var(--border-glow)', borderRadius: 3, padding: '1px 5px' };
+const roleChip: React.CSSProperties = { fontFamily: 'var(--font-mono)', fontSize: 11, padding: '1px 6px', borderRadius: 3, background: 'var(--bg-surface)', border: '1px solid var(--glass-border)' };
 const errorBanner: React.CSSProperties = { background: 'var(--danger-bg, rgba(239,68,68,0.1))', border: '1px solid var(--danger)', borderRadius: 'var(--radius-sm)', padding: '8px 12px', marginBottom: 12, fontSize: 11, color: 'var(--danger)' };
 const label: React.CSSProperties = { display: 'block', fontSize: 10, fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: 0.6, margin: '10px 0 4px' };
 const input: React.CSSProperties = { width: '100%', background: 'var(--bg-surface)', border: '1px solid var(--glass-border)', borderRadius: 'var(--radius-sm)', color: 'var(--text-primary)', fontSize: 12, padding: '8px 10px', outline: 'none', boxSizing: 'border-box' };

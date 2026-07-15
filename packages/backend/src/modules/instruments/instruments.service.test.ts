@@ -3,6 +3,7 @@ import { getRepositoryToken } from '@nestjs/typeorm';
 import { InstrumentsService } from './instruments.service';
 import { Instrument } from './entities/instrument.entity';
 import { AccountInstrument } from './entities/account-instrument.entity';
+import { REDIS_CLIENT } from '../../common/modules/redis.module';
 
 describe('InstrumentsService', () => {
   let service: InstrumentsService;
@@ -31,6 +32,7 @@ describe('InstrumentsService', () => {
         InstrumentsService,
         { provide: getRepositoryToken(Instrument), useValue: instrumentRepo },
         { provide: getRepositoryToken(AccountInstrument), useValue: accountInstrumentRepo },
+        { provide: REDIS_CLIENT, useValue: { publish: jest.fn().mockResolvedValue(1) } },
       ],
     }).compile();
 

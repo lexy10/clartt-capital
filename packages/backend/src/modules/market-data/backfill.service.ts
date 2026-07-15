@@ -3,8 +3,9 @@ import { HttpService } from '@nestjs/axios';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { firstValueFrom } from 'rxjs';
+import Redis from 'ioredis';
 import { Candle } from './entities/candle.entity';
-import { InstrumentsService } from '../instruments/instruments.service';
+import { InstrumentsService, INSTRUMENT_ACTIVATED_CHANNEL } from '../instruments/instruments.service';
 import { MarketDataService } from './market-data.service';
 import { CircuitBreaker } from '../../common/circuit-breaker/circuit-breaker';
 import { EXECUTION_ENGINE_CIRCUIT_BREAKER } from '../../common/circuit-breaker/circuit-breaker.module';
@@ -45,6 +46,7 @@ export class BackfillService implements OnModuleInit, OnModuleDestroy {
   private periodicGapFillInterval: NodeJS.Timeout | null = null;
   private isRecovering = false;
   private isPeriodicGapFilling = false;
+  private activationSub: Redis | null = null;
 
   constructor(
     private readonly instrumentsService: InstrumentsService,
@@ -67,9 +69,37 @@ export class BackfillService implements OnModuleInit, OnModuleDestroy {
 
     // Start periodic full gap-fill every 30 minutes
     setTimeout(() => this.startPeriodicGapFillLoop(), 5 * 60_000);
+
+    // Listen for instrument activations (published by InstrumentsService) so a
+    // newly-activated instrument gets backfilled + streamed immediately rather
+    // than waiting for the next periodic gap-fill. A dedicated connection is
+    // required — a subscribed client can't issue other commands.
+    try {
+      this.activationSub = new Redis({
+        host: process.env.REDIS_HOST || 'redis',
+        port: parseInt(process.env.REDIS_PORT || '6379', 10),
+        maxRetriesPerRequest: null,
+      });
+      this.activationSub.on('error', (err) =>
+        this.logger.warn(`Activation subscriber error: ${err.message}`),
+      );
+      this.activationSub.on('message', (_channel: string, symbol: string) => {
+        this.logger.log(`Instrument ${symbol} activated — backfilling`);
+        this.triggerBackfill().catch((err) =>
+          this.logger.error(`Backfill on activation failed: ${err.message}`),
+        );
+      });
+      await this.activationSub.subscribe(INSTRUMENT_ACTIVATED_CHANNEL);
+    } catch (err) {
+      this.logger.error(`Failed to subscribe to instrument activations: ${(err as Error).message}`);
+    }
   }
 
   onModuleDestroy(): void {
+    if (this.activationSub) {
+      this.activationSub.disconnect();
+      this.activationSub = null;
+    }
     if (this.healthCheckInterval) {
       clearInterval(this.healthCheckInterval);
       this.healthCheckInterval = null;

@@ -77,6 +77,7 @@ const navSections = [
       },
       {
         id: 'strategy',
+        adminOnly: true,
         path: ROUTES.STRATEGY,
         label: 'Strategies',
         icon: (
@@ -88,6 +89,7 @@ const navSections = [
       },
       {
         id: 'instruments',
+        adminOnly: true,
         path: ROUTES.INSTRUMENTS,
         label: 'Instruments',
         icon: (
@@ -100,6 +102,7 @@ const navSections = [
       },
       {
         id: 'algorithms',
+        adminOnly: true,
         path: ROUTES.ALGORITHMS,
         label: 'Algorithms',
         icon: (
@@ -186,13 +189,19 @@ const Sidebar: FC = () => {
   const isSuperAdmin = currentUser?.role === 'superadmin';
   const isAdminOrAbove = currentUser?.role === 'admin' || isSuperAdmin;
 
-  // Hide adminOnly sections from traders, then hide superAdminOnly items
-  // (e.g. Users) from non-super-admins within otherwise-visible sections.
+  // Section-level adminOnly hides a whole section from traders. Item-level
+  // adminOnly (config pages: Instruments/Strategies/Algorithms) and
+  // superAdminOnly (Users) hide individual entries within a visible section.
   const visibleSections = navSections
     .filter((s) => !s.adminOnly || isAdminOrAbove)
     .map((s) => ({
       ...s,
-      items: s.items.filter((it) => !(it as { superAdminOnly?: boolean }).superAdminOnly || isSuperAdmin),
+      items: s.items.filter((it) => {
+        const item = it as { superAdminOnly?: boolean; adminOnly?: boolean };
+        if (item.superAdminOnly && !isSuperAdmin) return false;
+        if (item.adminOnly && !isAdminOrAbove) return false;
+        return true;
+      }),
     }))
     .filter((s) => s.items.length > 0);
 
