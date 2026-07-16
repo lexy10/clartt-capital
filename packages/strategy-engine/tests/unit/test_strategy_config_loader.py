@@ -58,7 +58,7 @@ class TestFirstCallFetchesFromAPI:
         loader = StrategyConfigLoader(backend_url="http://backend:3000")
         strategies = loader.get_active_strategies()
 
-        mock_get.assert_called_once_with("http://backend:3000/api/strategies", timeout=10)
+        mock_get.assert_called_once_with("http://backend:3000/api/internal/strategies", timeout=10)
         assert len(strategies) == 1
         assert strategies[0].id == "strat-1"
         assert strategies[0].name == "US30 London Session"

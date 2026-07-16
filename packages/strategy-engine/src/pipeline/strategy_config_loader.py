@@ -139,8 +139,13 @@ class StrategyConfigLoader:
             logger.warning("Failed to refresh configs after recovery", exc_info=True)
 
     def _refresh(self) -> None:
-        """Fetch strategies from backend internal endpoint, parse and cache enabled ones."""
-        url = f"{self._backend_url}/api/strategies"
+        """Fetch strategies from backend internal endpoint, parse and cache enabled ones.
+
+        Uses /api/internal/strategies — the unauthenticated, Docker-network-only
+        service endpoint that returns FULL configs. (The public /api/strategies
+        requires a user JWT and, for non-admins, strips the config the engine
+        needs to trade — calling it 401s and trips this loader's breaker.)"""
+        url = f"{self._backend_url}/api/internal/strategies"
         response = requests.get(url, timeout=10)
         response.raise_for_status()
         raw_strategies = response.json()
