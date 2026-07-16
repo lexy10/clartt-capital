@@ -29,9 +29,9 @@ const Skeleton: FC<SkeletonProps> = ({
       width,
       height,
       borderRadius,
-      background: 'var(--bg-surface)',
+      background: 'var(--skeleton-base)',
       backgroundImage:
-        'linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.06) 50%, transparent 100%)',
+        'linear-gradient(90deg, transparent 0%, var(--skeleton-sheen) 50%, transparent 100%)',
       backgroundSize: '200% 100%',
       animation: 'ui-skeleton-shimmer 1.4s ease-in-out infinite',
       ...style,

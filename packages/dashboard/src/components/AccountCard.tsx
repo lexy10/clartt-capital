@@ -635,7 +635,7 @@ const placeholderStyle: React.CSSProperties = {
 const shimmerRow: React.CSSProperties = {
   height: 12,
   borderRadius: 4,
-  background: 'linear-gradient(90deg, var(--bg-surface) 25%, var(--bg-hover) 50%, var(--bg-surface) 75%)',
+  background: 'linear-gradient(90deg, var(--skeleton-base) 25%, var(--bg-hover) 50%, var(--skeleton-base) 75%)',
   backgroundSize: '200% 100%',
   animation: 'shimmer 1.5s infinite',
 };
