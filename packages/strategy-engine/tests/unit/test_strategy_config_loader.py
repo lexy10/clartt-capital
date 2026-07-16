@@ -200,3 +200,46 @@ class TestExtractsAlgorithmField:
 
         assert len(strategies) == 1
         assert strategies[0].id == "s1"
+
+
+class TestPeriodicRefreshRecovery:
+    """The background keep-warm refresh must exercise the breaker and let a
+    stuck-OPEN breaker recover WITHOUT any candle traffic (the 35h-stuck bug)."""
+
+    def test_periodic_refresh_runs_without_candles(self):
+        loader = StrategyConfigLoader(backend_url="http://backend:3000")
+        loader._refresh_interval = 0.05
+
+        resp = MagicMock()
+        resp.json.return_value = [_make_api_strategy()]
+        resp.raise_for_status.return_value = None
+        with patch("requests.get", return_value=resp) as mock_get:
+            loader.start()
+            time.sleep(0.2)
+            loader.stop()
+
+        # Refreshed on its own timer — no get_active_strategies() from candles.
+        assert mock_get.call_count >= 1
+
+    def test_stuck_open_breaker_recovers_on_timer(self):
+        loader = StrategyConfigLoader(backend_url="http://backend:3000")
+        loader._refresh_interval = 0.05
+        loader._cb._recovery_timeout_ms = 10  # recover fast for the test
+
+        # Phase 1: backend down → breaker trips OPEN (threshold defaults to 5).
+        with patch("requests.get", side_effect=requests.RequestException("down")):
+            for _ in range(6):
+                loader._cache_time = 0.0
+                loader.get_active_strategies()
+        assert loader.circuit_breaker.state.value == "open"
+
+        # Phase 2: backend recovers. With NO candles, only the timer drives the
+        # breaker — it must re-probe and close on its own.
+        resp = MagicMock()
+        resp.json.return_value = [_make_api_strategy()]
+        resp.raise_for_status.return_value = None
+        with patch("requests.get", return_value=resp):
+            loader.start()
+            time.sleep(0.3)
+            loader.stop()
+        assert loader.circuit_breaker.state.value == "closed"

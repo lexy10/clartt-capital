@@ -31,6 +31,17 @@ class StrategyConfigLoader:
             name="strategy-to-backend-config",
             on_state_change=self._on_state_change,
         )
+        # Serialise refresh so the candle thread and the background refresh
+        # thread never call the breaker's execute() concurrently.
+        self._refresh_lock = threading.Lock()
+        # Background keep-warm refresh. Config lookups are otherwise only
+        # triggered by incoming candles; if candles stop, the breaker is never
+        # exercised and a stuck-OPEN breaker can never recover (it re-probes
+        # only inside execute()). This timer drives execute() independently of
+        # candle flow so recovery is time-driven, not traffic-driven.
+        self._refresh_interval: float = 30.0
+        self._stop_event = threading.Event()
+        self._refresh_thread: threading.Thread | None = None
 
     @property
     def invalid_configs(self) -> dict[str, str]:
@@ -45,17 +56,58 @@ class StrategyConfigLoader:
         """
         now = time.time()
         if now - self._cache_time >= self._ttl:
-            try:
-                self._cb.execute(
-                    fn=self._refresh,
-                    fallback=self._fallback_cached,
-                )
-            except requests.RequestException:
-                logger.warning("Backend API unreachable, using stale cache")
+            # Double-checked under the lock: only one thread refreshes; the
+            # other sees the fresh cache_time and skips. This also keeps
+            # concurrent breaker execute() calls from racing.
+            with self._refresh_lock:
+                if time.time() - self._cache_time >= self._ttl:
+                    try:
+                        self._cb.execute(
+                            fn=self._refresh,
+                            fallback=self._fallback_cached,
+                        )
+                    except requests.RequestException:
+                        logger.warning("Backend API unreachable, using stale cache")
 
         if instrument is None:
             return list(self._cache)
         return [s for s in self._cache if instrument in s.instruments]
+
+    def start(self) -> None:
+        """Start the background keep-warm refresh loop."""
+        if self._refresh_thread is not None:
+            return
+        self._stop_event.clear()
+        self._refresh_thread = threading.Thread(
+            target=self._periodic_refresh_loop, daemon=True, name="config-refresh"
+        )
+        self._refresh_thread.start()
+        logger.info(
+            "Config keep-warm refresh started (every %.0fs)", self._refresh_interval
+        )
+
+    def stop(self) -> None:
+        """Stop the background refresh loop."""
+        self._stop_event.set()
+        if self._refresh_thread is not None:
+            self._refresh_thread.join(timeout=5.0)
+            self._refresh_thread = None
+
+    def _periodic_refresh_loop(self) -> None:
+        """Refresh config on a timer regardless of candle flow, so the breaker
+        is always exercised and recovers on its own after an outage."""
+        while not self._stop_event.is_set():
+            # Drive the breaker directly (under the same lock the candle path
+            # uses) so recovery is time-driven. When OPEN this re-probes after
+            # recovery_timeout; when CLOSED it just keeps the cache warm.
+            with self._refresh_lock:
+                try:
+                    self._cb.execute(fn=self._refresh, fallback=self._fallback_cached)
+                except requests.RequestException:
+                    logger.warning("Backend API unreachable, using stale cache")
+                except Exception:
+                    logger.warning("Periodic config refresh failed", exc_info=True)
+            self._stop_event.wait(timeout=self._refresh_interval)
 
     @property
     def circuit_breaker(self) -> CircuitBreaker:

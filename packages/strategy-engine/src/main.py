@@ -118,6 +118,11 @@ def main() -> None:
     # "enabled in the backend but silently not trading" must be visible.
     set_config_loader(config_loader)
 
+    # Keep config warm on a timer so the backend-config circuit breaker is
+    # exercised even when no candles are flowing — otherwise a stuck-OPEN
+    # breaker can never recover (it only re-probes inside execute()).
+    config_loader.start()
+
     # Create FastAPI app for algorithm management API
     api_port = int(os.environ.get("API_PORT", "8003"))
     app = create_app(registry, algorithm_manager)
@@ -151,6 +156,8 @@ def main() -> None:
     logger.info("API server stopping.")
     strategy_runner.stop()
     logger.info("StrategyRunner stopped.")
+    config_loader.stop()
+    logger.info("Config refresh stopped.")
     signal_persister.shutdown()
     logger.info("SignalPersister shutdown.")
     backtest_consumer.stop()
