@@ -262,8 +262,8 @@ export interface ApiClient {
     logout(): Promise<void>;
   };
   users: {
-    me(): Promise<{ id: string; email: string; role: string }>;
-    updateMe(dto: { email?: string }): Promise<{ id: string; email: string; role: string }>;
+    me(): Promise<CurrentUserDto>;
+    updateMe(dto: { email?: string; theme?: { mode?: string; accent?: string } }): Promise<CurrentUserDto>;
     changeMyPassword(currentPassword: string, newPassword: string): Promise<void>;
     listAll(): Promise<AdminUser[]>;
     create(dto: { email: string; password: string; role: string }): Promise<AdminUser>;

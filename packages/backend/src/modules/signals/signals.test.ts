@@ -4,6 +4,7 @@ import { getRepositoryToken } from '@nestjs/typeorm';
 import { SignalsService } from './signals.service';
 import { SignalsController } from './signals.controller';
 import { Signal } from './entities/signal.entity';
+import { Trade } from '../trades/entities/trade.entity';
 import { CreateSignalDto } from './dto/create-signal.dto';
 import { validate } from 'class-validator';
 import { plainToInstance } from 'class-transformer';
@@ -36,11 +37,21 @@ describe('Signals Module', () => {
       findOne: jest.fn().mockResolvedValue(null),
     };
 
+    // Trade repo: the service uses a query builder to find signal ids with trades.
+    const mockTradeRepo = {
+      createQueryBuilder: jest.fn(() => ({
+        select: jest.fn().mockReturnThis(),
+        where: jest.fn().mockReturnThis(),
+        getRawMany: jest.fn().mockResolvedValue([]),
+      })),
+    };
+
     const module: TestingModule = await Test.createTestingModule({
       controllers: [SignalsController],
       providers: [
         SignalsService,
         { provide: getRepositoryToken(Signal), useValue: mockRepo },
+        { provide: getRepositoryToken(Trade), useValue: mockTradeRepo },
       ],
     }).compile();
 

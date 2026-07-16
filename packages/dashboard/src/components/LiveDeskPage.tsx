@@ -9,12 +9,13 @@ import TradeDrillDown from './performance/TradeDrillDown';
 import Skeleton from './Skeleton';
 import { apiClient } from '../services/ApiClient';
 import { wsManager } from '../services/WebSocketManager';
-import { useChartStore } from '../stores/chartStore';
 import { useHealthStore } from '../stores/healthStore';
 import { usePerformanceStore } from '../stores/performanceStore';
 import { usePortfolioStore } from '../stores/portfolioStore';
 import { useReconciliationStore } from '../stores/reconciliationStore';
 import type { Signal } from '../types/signal';
+import { signalStrategyName } from '../types/signal';
+import SignalStatusBadge from './SignalStatusBadge';
 import { ROUTES } from '../types/api';
 
 type Tone = 'success' | 'warning' | 'danger' | 'muted';
@@ -126,17 +127,15 @@ const PositionsPanel: FC = () => {
   );
 };
 
-const LatestSignalsPanel: FC<{ instrument: string }> = ({ instrument }) => {
+/** Latest signals across ALL instruments — independent of the chart selection.
+ *  Shows the strategy that generated each signal and whether it actually
+ *  traded (or why it didn't). */
+const LatestSignalsPanel: FC = () => {
   const [signals, setSignals] = useState<Signal[]>([]);
 
   useEffect(() => {
-    if (!instrument) {
-      setSignals([]);
-      return;
-    }
-
     let cancelled = false;
-    apiClient.signals.getRecent({ instrument, limit: 6 })
+    apiClient.signals.getRecent({ limit: 8 })
       .then((data) => {
         if (!cancelled) setSignals(data);
       })
@@ -144,42 +143,44 @@ const LatestSignalsPanel: FC<{ instrument: string }> = ({ instrument }) => {
         if (!cancelled) setSignals([]);
       });
 
+    // Accept signals for every instrument — no chart-instrument filter.
     const subId = wsManager.subscribe('signals', (signal: Signal) => {
-      if (signal.instrument === instrument) {
-        setSignals((prev) => [signal, ...prev.filter((item) => item.id !== signal.id)].slice(0, 6));
-      }
+      setSignals((prev) => [signal, ...prev.filter((item) => item.id !== signal.id)].slice(0, 8));
     });
 
     return () => {
       cancelled = true;
       wsManager.unsubscribe(subId);
     };
-  }, [instrument]);
+  }, []);
 
   return (
     <div className="live-desk-card">
       <div className="live-desk-card-header">
-        <span>Signal Rationale</span>
+        <span>Latest Signals</span>
         <DetailLink to={ROUTES.SIGNALS}>Signals</DetailLink>
       </div>
-      {!instrument || signals.length === 0 ? (
-        <div className="live-desk-empty">{instrument ? 'No recent signals' : 'Select an instrument'}</div>
+      {signals.length === 0 ? (
+        <div className="live-desk-empty">No recent signals</div>
       ) : (
         <div className="live-desk-list">
-          {signals.slice(0, 4).map((signal) => (
+          {signals.slice(0, 5).map((signal) => (
             <div className="live-desk-signal" key={signal.id}>
               <div className="live-desk-signal-head">
                 <strong className={signal.direction === 'BUY' ? 'live-desk-text-success' : 'live-desk-text-danger'}>
-                  {signal.direction}
+                  {signal.direction} {signal.instrument}
                 </strong>
-                <span>{new Date(signal.created_at).toLocaleTimeString()}</span>
+                <SignalStatusBadge signal={signal} />
               </div>
               <div className="live-desk-signal-prices">
                 <span>E {signal.entry_price.toFixed(1)}</span>
                 <span>SL {signal.stop_loss.toFixed(1)}</span>
                 <span>TP {signal.take_profit.toFixed(1)}</span>
               </div>
-              <p>{signalReason(signal)}</p>
+              <p>
+                <span style={{ color: 'var(--text-secondary)', fontWeight: 600 }}>{signalStrategyName(signal)}</span>
+                {' · '}{signalReason(signal)}
+              </p>
             </div>
           ))}
         </div>
@@ -189,7 +190,6 @@ const LatestSignalsPanel: FC<{ instrument: string }> = ({ instrument }) => {
 };
 
 const LiveDeskPage: FC = () => {
-  const instrument = useChartStore((s) => s.instrument);
   const fetchOverview = usePerformanceStore((s) => s.fetchOverview);
   const fetchAccounts = usePerformanceStore((s) => s.fetchAccounts);
   const fetchActivityFeed = usePerformanceStore((s) => s.fetchActivityFeed);
@@ -249,7 +249,7 @@ const LiveDeskPage: FC = () => {
 
       {/* ── Live trading panels (signals + positions, no overlay) ── */}
       <section className="live-desk-workspace" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
-        <LatestSignalsPanel instrument={instrument} />
+        <LatestSignalsPanel />
         <PositionsPanel />
       </section>
     </div>

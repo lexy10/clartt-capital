@@ -4,6 +4,15 @@ export type SignalDirection = 'BUY' | 'SELL';
 export type SignalMode = 'backtest' | 'forward_test' | 'live';
 export type BOSType = 'bullish' | 'bearish';
 
+/** Why a signal did or didn't become a position (from the backend, or derived
+ *  client-side from mode when execution info isn't attached yet). */
+export type SignalExecutionStatus = 'executed' | 'no_fill' | 'paper' | 'backtest' | 'pending';
+export interface SignalExecution {
+  status: SignalExecutionStatus;
+  label: string;
+  reason: string;
+}
+
 export interface SignalMetadata {
   bos_type: BOSType;
   liquidity_swept: boolean;
@@ -25,7 +34,9 @@ export interface Signal {
   timeframe: Timeframe;
   order_block_id: string;
   strategy_id: string;
+  strategy_name: string | null;
   mode: SignalMode;
+  execution: SignalExecution | null;
   metadata: SignalMetadata | null;
   created_at: string;
 }
@@ -50,7 +61,10 @@ export interface RawSignal {
   order_block_id?: string | null;
   strategyId?: string | null;
   strategy_id?: string | null;
+  strategyName?: string | null;
+  strategy_name?: string | null;
   mode: SignalMode;
+  execution?: SignalExecution | null;
   metadata: SignalMetadata | null;
   createdAt?: string;
   created_at?: string;
@@ -70,8 +84,34 @@ export function normalizeSignal(raw: RawSignal): Signal {
     timeframe: raw.timeframe,
     order_block_id: (raw.orderBlockId ?? raw.order_block_id ?? '') as string,
     strategy_id: (raw.strategyId ?? raw.strategy_id ?? '') as string,
+    strategy_name: raw.strategyName ?? raw.strategy_name ?? null,
     mode: raw.mode,
+    execution: raw.execution ?? null,
     metadata: raw.metadata,
     created_at: raw.createdAt ?? raw.created_at ?? '',
   };
+}
+
+/** Resolve a signal's execution outcome, falling back to a mode-based guess
+ *  when the backend hasn't attached one (e.g. a just-arrived live WS signal). */
+export function signalExecution(s: Signal): SignalExecution {
+  if (s.execution) return s.execution;
+  if (s.mode === 'backtest') {
+    return { status: 'backtest', label: 'Backtest', reason: 'Backtest signal — not for live trading.' };
+  }
+  if (s.mode === 'forward_test') {
+    return {
+      status: 'paper',
+      label: 'Paper',
+      reason: 'Forward-test mode — recorded for analytics but not sent to live execution. Set the strategy to Live to trade it.',
+    };
+  }
+  return { status: 'pending', label: 'Pending', reason: 'Live signal — awaiting execution result.' };
+}
+
+/** Display name for the strategy that produced a signal. */
+export function signalStrategyName(s: Signal): string {
+  if (s.strategy_name) return s.strategy_name;
+  if (s.strategy_id) return `Strategy ${s.strategy_id.slice(0, 8)}`;
+  return '—';
 }

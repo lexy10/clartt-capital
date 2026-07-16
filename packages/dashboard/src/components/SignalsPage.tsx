@@ -1,8 +1,10 @@
 import { type FC, type ReactNode, useEffect, useRef } from 'react';
 import { useSignalStore } from '../stores/signalStore';
 import type { Signal, SignalDirection } from '../types/signal';
+import { signalExecution, signalStrategyName } from '../types/signal';
 import type { Timeframe } from '../types/timeframe';
 import { wsManager } from '../services/WebSocketManager';
+import SignalStatusBadge from './SignalStatusBadge';
 
 /* ── Pure helpers (exported for testing) ── */
 
@@ -94,7 +96,11 @@ const SignalsPage: FC = () => {
           <DetailRow label="SL Distance" value={formatPrice(getSlDistance(selectedSignal.entry_price, selectedSignal.stop_loss))} mono />
           <DetailRow label="Timeframe" value={selectedSignal.timeframe} />
           <DetailRow label="Mode" value={selectedSignal.mode} />
-          <DetailRow label="Strategy ID" value={selectedSignal.strategy_id || '—'} />
+          <DetailRow label="Strategy" value={signalStrategyName(selectedSignal)} />
+          <DetailRow label="Execution">
+            <SignalStatusBadge signal={selectedSignal} />
+          </DetailRow>
+          <DetailRow label="Why" value={signalExecution(selectedSignal).reason} />
           <DetailRow label="Created" value={fmtDate(selectedSignal.created_at)} />
 
           {/* Metadata */}
@@ -210,15 +216,15 @@ const SignalsPage: FC = () => {
                     style={{ borderBottom: '1px solid var(--bg-primary)', cursor: 'pointer' }}
                   >
                     <td style={tdLeft}>{sig.instrument}</td>
+                    <td style={{ ...tdLeft, fontFamily: 'var(--font-sans)' }}>{signalStrategyName(sig)}</td>
                     <td style={tdLeft}><DirectionBadge direction={sig.direction} /></td>
                     <td style={tdRight}>{formatPrice(sig.entry_price)}</td>
                     <td style={tdRight}>{formatPrice(sig.stop_loss)}</td>
                     <td style={tdRight}>{formatPrice(sig.take_profit)}</td>
                     <td style={tdRight}><ConfidenceBadge score={sig.confidence_score} /></td>
                     <td style={tdRight}>{formatPrice(getRiskReward(sig.direction, sig.entry_price, sig.stop_loss, sig.take_profit))}</td>
-                    <td style={tdRight}>{formatPrice(getSlDistance(sig.entry_price, sig.stop_loss))}</td>
                     <td style={tdLeft}>{sig.timeframe}</td>
-                    <td style={tdLeft}>{sig.mode}</td>
+                    <td style={tdLeft}><SignalStatusBadge signal={sig} /></td>
                     <td style={{ ...tdLeft, fontFamily: 'var(--font-mono)', color: 'var(--text-secondary)' }}>{fmtDate(sig.created_at)}</td>
                   </tr>
                 ))}
@@ -325,15 +331,15 @@ const sortLabels: Record<string, string> = {
 
 const TABLE_HEADERS = [
   { label: 'Instrument', align: 'left' as const },
+  { label: 'Strategy', align: 'left' as const },
   { label: 'Direction', align: 'left' as const },
   { label: 'Entry', align: 'right' as const },
   { label: 'SL', align: 'right' as const },
   { label: 'TP', align: 'right' as const },
   { label: 'Confidence', align: 'right' as const },
   { label: 'R:R', align: 'right' as const },
-  { label: 'SL Dist', align: 'right' as const },
   { label: 'TF', align: 'left' as const },
-  { label: 'Mode', align: 'left' as const },
+  { label: 'Status', align: 'left' as const },
   { label: 'Created', align: 'left' as const },
 ];
 

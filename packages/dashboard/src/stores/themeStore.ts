@@ -77,7 +77,7 @@ function applyToDom(prefs: ThemePrefs) {
 
 /** Sanitise arbitrary DB/localStorage input into valid prefs (defaults for the
  *  rest). Guards against a value the current build no longer recognises. */
-function coercePrefs(raw: Partial<ThemePrefs> | null | undefined): ThemePrefs {
+function coercePrefs(raw: { mode?: string; accent?: string } | null | undefined): ThemePrefs {
   const mode: ThemeMode = raw?.mode === 'light' || raw?.mode === 'dark' || raw?.mode === 'system'
     ? raw.mode : DEFAULTS.mode;
   const accent: Accent = ACCENTS.some((a) => a.id === raw?.accent)
@@ -93,7 +93,7 @@ interface ThemeState extends ThemePrefs {
   /** Load a user's saved prefs when the logged-in user changes. `dbPrefs` is
    *  the theme stored on the user record (from /users/me); it wins over the
    *  local cache so the choice follows the user across devices. */
-  loadForUser: (userId: string | null, dbPrefs?: Partial<ThemePrefs> | null) => void;
+  loadForUser: (userId: string | null, dbPrefs?: { mode?: string; accent?: string } | null) => void;
 }
 
 const initial: ThemePrefs = coercePrefs(readPrefs(GLOBAL_KEY));
