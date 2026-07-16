@@ -15,6 +15,7 @@ from typing import Optional
 import requests
 from redis import Redis
 
+from src.api import liveness
 from src.models import Candle, StrategyConfig
 from src.models.trading_event import (
     TradingEvent,
@@ -141,7 +142,9 @@ class StrategyRunner:
     def _listen(self) -> None:
         """Main pub/sub loop with exponential-backoff reconnection."""
         backoff = INITIAL_BACKOFF
+        liveness.beat()  # mark alive as soon as the loop thread starts
         while not self._stop_event.is_set():
+            liveness.beat()  # each reconnect cycle counts as progress
             pubsub = None
             try:
                 pubsub = self._redis.pubsub()
@@ -150,6 +153,9 @@ class StrategyRunner:
                 backoff = INITIAL_BACKOFF  # reset on successful connect
 
                 while not self._stop_event.is_set():
+                    # Heartbeat every poll (~1s idle) BEFORE processing, so a
+                    # hang inside _on_candle_update stops the beats → restart.
+                    liveness.beat()
                     msg = pubsub.get_message(ignore_subscribe_messages=True, timeout=1.0)
                     if msg is None:
                         continue

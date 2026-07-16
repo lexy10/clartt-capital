@@ -5,6 +5,7 @@ from unittest.mock import patch
 from fastapi.testclient import TestClient
 from fastapi import FastAPI
 
+from src.api import liveness
 from src.api.health_router import health_router, set_circuit_breakers
 from src.circuit_breaker import CircuitBreaker, CircuitBreakerState
 
@@ -76,6 +77,39 @@ class TestHealthEndpointDegraded:
         config_dep = next(d for d in body["dependencies"] if d["name"] == "backend-config")
         assert config_dep["status"] == "unhealthy"
         assert config_dep["circuitBreakerState"] == "open"
+
+
+class TestLivenessEndpoint:
+    """/livez reflects loop heartbeat freshness, independent of dependencies."""
+
+    def test_alive_after_recent_beat(self):
+        liveness.beat()
+        client = TestClient(_make_app())
+        resp = client.get("/livez")
+        assert resp.status_code == 200
+        assert resp.json()["status"] == "alive"
+
+    def test_stale_returns_503(self):
+        client = TestClient(_make_app())
+        # Simulate a heartbeat older than the staleness window.
+        with patch.object(liveness, "seconds_since_beat", return_value=liveness.MAX_STALE_S + 5):
+            resp = client.get("/livez")
+        assert resp.status_code == 503
+        assert resp.json()["status"] == "stale"
+
+    def test_liveness_ignores_open_breaker(self):
+        # An open dependency breaker must NOT make the engine look non-live —
+        # a restart wouldn't fix an external dependency.
+        config_cb = CircuitBreaker(name="strategy-to-backend-config", failure_threshold=2)
+        for _ in range(2):
+            try:
+                config_cb.execute(fn=lambda: (_ for _ in ()).throw(Exception("fail")), fallback=lambda: None)
+            except Exception:
+                pass
+        set_circuit_breakers(config_cb, CircuitBreaker(name="strategy-to-backend-signals"))
+        liveness.beat()
+        client = TestClient(_make_app())
+        assert client.get("/livez").status_code == 200
 
 
 class TestHealthEndpointResponseShape:

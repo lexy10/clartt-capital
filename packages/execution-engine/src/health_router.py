@@ -8,9 +8,10 @@ import logging
 from datetime import datetime, timezone
 from typing import Optional
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Response
 from pydantic import BaseModel
 
+from src import liveness
 from src.circuit_breaker import CircuitBreaker, CircuitBreakerState
 
 logger = logging.getLogger("execution_engine.health")
@@ -63,6 +64,25 @@ def _aggregate_status(dep_statuses: list[str]) -> str:
     if any(s == "unhealthy" for s in dep_statuses):
         return "degraded"
     return "degraded"
+
+
+@health_router.get("/livez")
+def livez(response: Response) -> dict:
+    """Liveness probe for the Docker healthcheck / autoheal.
+
+    Returns 503 when the position-monitor loop has stalled (no heartbeat within
+    the staleness window) so the container is restarted. Independent of
+    dependency health — see /health for that.
+    """
+    stale = liveness.seconds_since_beat()
+    alive = stale <= liveness.MAX_STALE_S
+    if not alive:
+        response.status_code = 503
+    return {
+        "status": "alive" if alive else "stale",
+        "secondsSinceBeat": round(stale, 1),
+        "maxStaleSeconds": liveness.MAX_STALE_S,
+    }
 
 
 @health_router.get("/health")

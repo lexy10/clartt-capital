@@ -97,8 +97,11 @@ services:
       redis:
         condition: service_healthy
     healthcheck:
-      # /health lives on the FastAPI management port (8003), not metrics (8001).
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8003/health', timeout=5)"]
+      # /livez (liveness) lives on the FastAPI management port (8003), not
+      # metrics (8001). It fails only when the signal loop has stalled, so
+      # autoheal restarts a genuinely hung engine — not one merely degraded by
+      # a downstream dependency (/health reports that separately).
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8003/livez', timeout=5)"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -136,7 +139,10 @@ services:
       redis:
         condition: service_healthy
     healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8002/health', timeout=5)"]
+      # /livez (liveness) fails only when the position-monitor loop has stalled,
+      # so autoheal restarts a hung engine — not one degraded by the broker
+      # being unreachable (/health reports that separately).
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8002/livez', timeout=5)"]
       interval: 30s
       timeout: 10s
       retries: 3

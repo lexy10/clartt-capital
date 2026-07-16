@@ -20,6 +20,7 @@ from typing import Optional, TYPE_CHECKING
 import requests
 from redis import Redis
 
+from src import liveness
 from src.executor.clients.base import BrokerProvider, BrokerRouter
 from src.executor.trade_executor import TradeExecutor, BrokerClient
 from src.models import (
@@ -296,7 +297,11 @@ class PositionMonitor:
         # Initial specs load
         self._refresh_specs()
 
+        liveness.beat()  # mark alive as soon as the loop thread starts
         while not self._stop_event.is_set():
+            # Heartbeat BEFORE the cycle so a hang inside _check_all_positions
+            # stops the beats → the container is restarted by autoheal.
+            liveness.beat()
             try:
                 self._check_all_positions()
             except Exception:
