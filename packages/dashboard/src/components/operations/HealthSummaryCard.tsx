@@ -21,12 +21,15 @@ const HealthSummaryCard: FC = () => {
     : lagAlerts.length > 0
       ? 'warning'
       : 'success';
+  // At least one hard error (down service or open breaker) → make the whole
+  // card + badge pulse red so it's impossible to miss at a glance.
+  const alert = tone === 'danger';
 
   return (
-    <div className="live-desk-card live-desk-card-compact">
+    <div className={`live-desk-card live-desk-card-compact${alert ? ' live-desk-card-alert' : ''}`}>
       <div className="live-desk-card-header">
         <span>System</span>
-        <StatusBadge tone={tone} label={tone === 'success' ? 'Clear' : 'Check'} />
+        <StatusBadge tone={tone} label={tone === 'success' ? 'Clear' : 'Check'} pulse={alert} />
       </div>
       <div className="live-desk-pair-row">
         <span>Services</span>

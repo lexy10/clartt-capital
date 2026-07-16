@@ -98,6 +98,39 @@
   min-width: 0;
 }
 
+/* System-health alert: pulse the whole card red when a service is down or a
+   breaker is open. Overrides the static border via the animation. */
+.live-desk-card-alert {
+  border-color: var(--danger);
+  animation: live-desk-alert-pulse 1.3s ease-in-out infinite;
+}
+
+@keyframes live-desk-alert-pulse {
+  0%, 100% {
+    border-color: var(--danger-border);
+    box-shadow: var(--shadow-sm);
+  }
+  50% {
+    border-color: var(--danger);
+    box-shadow: 0 0 0 1px var(--danger), 0 0 18px var(--danger-bg);
+  }
+}
+
+/* Blinking badge (e.g. the "Check" pill) for the same alert state. */
+.live-desk-blink {
+  animation: live-desk-blink 1s ease-in-out infinite;
+}
+
+@keyframes live-desk-blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.35; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .live-desk-card-alert,
+  .live-desk-blink { animation: none; }
+}
+
 .live-desk-card-compact {
   display: flex;
   flex-direction: column;

@@ -31,6 +31,9 @@ services:
       - NODE_ENV=production
     ports: !override
       - "127.0.0.1:${BACKEND_PORT:-3000}:3000"
+    # Opt into autoheal (below): restart automatically if the healthcheck fails.
+    labels:
+      - autoheal=true
 
   strategy-engine:
     image: ghcr.io/${IMAGE_REPO_OWNER}/clartt-strategy-engine:${IMAGE_TAG:-latest}
@@ -38,17 +41,48 @@ services:
     ports: !override
       - "127.0.0.1:${STRATEGY_ENGINE_PORT:-8001}:8001"
       - "127.0.0.1:${STRATEGY_ENGINE_API_PORT:-8003}:8003"
+    labels:
+      - autoheal=true
 
   execution-engine:
     image: ghcr.io/${IMAGE_REPO_OWNER}/clartt-execution-engine:${IMAGE_TAG:-latest}
     pull_policy: always
     ports: !override
       - "127.0.0.1:${EXECUTION_ENGINE_PORT:-8002}:8002"
+    labels:
+      - autoheal=true
 
   postgres:
     ports: !override
       - "127.0.0.1:${POSTGRES_PORT:-5433}:5432"
+    labels:
+      - autoheal=true
 
   redis:
     ports: !override
       - "127.0.0.1:${REDIS_PORT:-6379}:6379"
+    labels:
+      - autoheal=true
+
+  # Self-healing watchdog. Docker's `restart: unless-stopped` only reacts when a
+  # container *exits*; it does nothing when a container stays up but its
+  # HEALTHCHECK reports "unhealthy" (a hung engine, wedged DB pool, etc).
+  # autoheal watches the Docker socket and restarts any container labelled
+  # autoheal=true once it goes unhealthy — the missing "just restart it" step.
+  autoheal:
+    image: willfarrell/autoheal:1.2.0
+    restart: unless-stopped
+    environment:
+      # Only touch containers we've explicitly opted in via the label above.
+      - AUTOHEAL_CONTAINER_LABEL=autoheal
+      # Poll the Docker healthcheck state every 10s.
+      - AUTOHEAL_INTERVAL=10
+      # Don't restart during a container's own healthcheck start_period (30s);
+      # give a little extra so slow boots aren't killed mid-startup.
+      - AUTOHEAL_START_PERIOD=45
+      # Graceful stop window before force-kill on restart.
+      - AUTOHEAL_DEFAULT_STOP_TIMEOUT=20
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    networks:
+      - trading-net

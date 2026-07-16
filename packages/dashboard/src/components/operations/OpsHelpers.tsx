@@ -8,8 +8,8 @@ import { Link } from 'react-router-dom';
 
 export type Tone = 'success' | 'warning' | 'danger' | 'muted';
 
-export const StatusBadge: FC<{ tone: Tone; label: string }> = ({ tone, label }) => (
-  <span className={`live-desk-badge live-desk-badge-${tone}`}>{label}</span>
+export const StatusBadge: FC<{ tone: Tone; label: string; pulse?: boolean }> = ({ tone, label, pulse }) => (
+  <span className={`live-desk-badge live-desk-badge-${tone}${pulse ? ' live-desk-blink' : ''}`}>{label}</span>
 );
 
 export const DetailLink: FC<{ to: string; children: string }> = ({ to, children }) => (
