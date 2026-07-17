@@ -60,4 +60,13 @@ export class InternalAutopilotController {
   getMaster() {
     return this.autopilotService.getMasterAutopilot();
   }
+
+  /** Every autopilot-enabled, active account with the fields the execution
+   *  engine needs to (re)spawn its worker. Used for startup reconciliation so
+   *  trading survives an engine restart. Returns decrypted Deriv tokens — this
+   *  MUST stay Docker-network only (blocked from the public proxy). */
+  @Get('active-workers')
+  activeWorkers() {
+    return this.autopilotService.listActiveWorkerRequests();
+  }
 }

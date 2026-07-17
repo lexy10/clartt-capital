@@ -198,6 +198,66 @@ def _create_candle_streamer(deriv_client, provisioner):
     return StubCandleStreamer(redis_url=redis_url)
 
 
+def _reconcile_workers(backend_url: str, api_port: int) -> None:
+    """Re-spawn AccountWorkers on engine startup.
+
+    Workers live only in the supervisor's in-memory dict, so an engine restart
+    (deploy, autoheal, crash) drops them all and nothing recreates them — an
+    autopilot-enabled account silently stops trading until autopilot is toggled
+    again. Here we pull every autopilot-enabled account from the backend's
+    internal endpoint and (re)start its worker by POSTing to our OWN
+    /workers/start — reusing all of that endpoint's logic (broker resolution,
+    live balance fetch, per-account Deriv auth).
+
+    Best-effort with retries: the backend may still be booting.
+    """
+    import time as _time
+    import requests as _requests
+
+    list_url = f"{backend_url}/api/internal/autopilot/active-workers"
+    start_url = f"http://localhost:{api_port}/workers/start"
+
+    # Give our own uvicorn a moment to bind before we self-call /workers/start.
+    _time.sleep(2)
+
+    accounts = None
+    for attempt in range(30):  # ~2.5 min of retries while the backend boots
+        try:
+            resp = _requests.get(list_url, timeout=5)
+            resp.raise_for_status()
+            accounts = resp.json()
+            break
+        except Exception:
+            if attempt == 0:
+                logger.info("Worker reconcile: waiting for backend to become reachable…")
+            _time.sleep(5)
+    if accounts is None:
+        logger.warning("Worker reconcile: gave up fetching active workers from backend")
+        return
+
+    if not accounts:
+        logger.info("Worker reconcile: no autopilot-enabled accounts to restore")
+        return
+
+    started = 0
+    for acct in accounts:
+        try:
+            r = _requests.post(start_url, json=acct, timeout=25)
+            if r.ok:
+                started += 1
+            else:
+                logger.warning(
+                    "Worker reconcile: /workers/start failed for %s (%s): %s",
+                    acct.get("account_id"), r.status_code, r.text[:200],
+                )
+        except Exception as exc:
+            logger.warning(
+                "Worker reconcile: error starting worker for %s: %s",
+                acct.get("account_id"), exc,
+            )
+    logger.info("Worker reconcile: (re)started %d/%d autopilot worker(s)", started, len(accounts))
+
+
 def _start_fastapi_server(
     port: int = 8002,
     supervisor: WorkerSupervisor | None = None,
@@ -285,6 +345,18 @@ def _start_fastapi_server(
         daemon=True,
     )
     server_thread.start()
+
+    # Restore workers for autopilot-enabled accounts so trading survives an
+    # engine restart. Runs in the background (retries until the backend is up)
+    # and self-calls /workers/start, so it needs the local server listening.
+    if supervisor is not None:
+        reconcile_backend_url = os.environ.get("BACKEND_URL", "http://backend:3000")
+        threading.Thread(
+            target=_reconcile_workers,
+            args=(reconcile_backend_url, port),
+            daemon=True,
+            name="worker-reconcile",
+        ).start()
 
 
 def main() -> None:

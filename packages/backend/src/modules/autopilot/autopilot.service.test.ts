@@ -198,6 +198,41 @@ describe('AutopilotService', () => {
     });
   });
 
+  describe('listActiveWorkerRequests', () => {
+    it('returns worker-start payloads for enabled + active accounts only, with decrypted deriv token', async () => {
+      mockAutopilotRepo.find.mockResolvedValue([
+        {
+          enabled: true,
+          account: {
+            id: 'a1', userId: 'u1', metaapiAccountId: null, label: 'Deriv A',
+            brokerProvider: 'deriv', accountKind: 'personal',
+            derivApiToken: 'plain-token', derivLoginId: 'CR123', isActive: true,
+          },
+        },
+        // disabled account row shouldn't appear (enabled:false filtered by query,
+        // but also guard against an inactive account slipping through)
+        {
+          enabled: true,
+          account: { id: 'a2', userId: 'u1', isActive: false, accountKind: 'personal' },
+        },
+      ]);
+
+      const result = await service.listActiveWorkerRequests();
+
+      expect(result).toHaveLength(1);
+      expect(result[0]).toMatchObject({
+        account_id: 'a1',
+        broker_provider: 'deriv',
+        deriv_api_token: 'plain-token',
+        deriv_login_id: 'CR123',
+      });
+      expect(mockAutopilotRepo.find).toHaveBeenCalledWith({
+        where: { enabled: true },
+        relations: { account: true },
+      });
+    });
+  });
+
   describe('getAutopilotState', () => {
     const accountId = 'account-uuid-1';
 

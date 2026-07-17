@@ -336,6 +336,39 @@ export class AutopilotService {
     };
   }
 
+  /** Every autopilot-enabled, active account, shaped exactly like the
+   *  /workers/start payload so the engine can re-spawn workers on startup.
+   *  The Deriv token is decrypted by the entity's column transformer. */
+  async listActiveWorkerRequests(): Promise<
+    Array<{
+      account_id: string;
+      user_id: string;
+      metaapi_account_id: string | null;
+      label: string;
+      broker_provider: string | null;
+      account_kind: string;
+      deriv_api_token: string | null;
+      deriv_login_id: string | null;
+    }>
+  > {
+    const states = await this.autopilotRepo.find({
+      where: { enabled: true },
+      relations: { account: true },
+    });
+    return states
+      .filter((s) => s.account && s.account.isActive)
+      .map((s) => ({
+        account_id: s.account.id,
+        user_id: s.account.userId,
+        metaapi_account_id: s.account.metaapiAccountId,
+        label: s.account.label ?? '',
+        broker_provider: s.account.brokerProvider ?? null,
+        account_kind: s.account.accountKind,
+        deriv_api_token: s.account.derivApiToken,
+        deriv_login_id: s.account.derivLoginId,
+      }));
+  }
+
   private async syncWorkerState(
     account: TradingAccount,
     enabled: boolean,
