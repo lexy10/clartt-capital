@@ -50,17 +50,26 @@ def _create_broker_router():
     )
 
     router = BrokerRouter()
-    registered_any = False
 
-    # Deriv direct (synthetics)
-    deriv_token = os.environ.get("DERIV_API_TOKEN", "")
-    deriv_app_id = os.environ.get("DERIV_APP_ID", "")
-    if deriv_token and deriv_app_id:
-        router.register(
-            BrokerProvider.DERIV,
-            DerivSyntheticClient(app_id=deriv_app_id, api_token=deriv_token),
-        )
-        registered_any = True
+    # Deriv direct (synthetics: R_*, BOOM_*, CRASH_*).
+    # Deriv authenticates PER ACCOUNT at execution time via connect_with_token()
+    # using each account's own stored token, so the client is registered
+    # UNCONDITIONALLY. The app_id is public (defaults to 1089) and is all that's
+    # needed to open the socket; a global DERIV_API_TOKEN is optional.
+    #
+    # Previously registration was gated on a global DERIV_API_TOKEN. Accounts
+    # connected per-account through the UI (token in the DB, no global env) then
+    # had NO Deriv client on the router, so their synthetic trades couldn't
+    # resolve a broker and silently failed to route — signals fired but no
+    # order was ever placed.
+    deriv_app_id = os.environ.get("DERIV_APP_ID", "") or "1089"
+    router.register(
+        BrokerProvider.DERIV,
+        DerivSyntheticClient(
+            app_id=deriv_app_id,
+            api_token=os.environ.get("DERIV_API_TOKEN", ""),
+        ),
+    )
 
     # MetaAPI (forex/commodities/indices via MT5)
     metaapi_token = os.environ.get("METAAPI_TOKEN", "")
@@ -69,23 +78,20 @@ def _create_broker_router():
             BrokerProvider.METAAPI,
             MetaApiForexClient(api_token=metaapi_token),
         )
-        registered_any = True
 
-    # Stubs — register only if you want them visible for diagnostics
+    # Stubs — visible for diagnostics / providers not yet run live
     router.register(BrokerProvider.ALPACA, AlpacaStockClient())
     router.register(BrokerProvider.BINANCE, BinanceCryptoClient())
     router.register(BrokerProvider.IBKR, IBKRFutureClient())
 
-    if not registered_any:
-        # No real providers configured — fall back to single stub for demo mode
+    # Back MetaAPI with a stub when it has no creds, so forex/index trades don't
+    # crash in demo setups. Synthetics always use the real Deriv client above.
+    if not metaapi_token:
         from src.executor.stub_broker_client import StubBrokerClient
-        stub = StubBrokerClient()
-        router.register(BrokerProvider.STUB, stub)
-        # Also register stub as fallback for Deriv & MetaAPI so trades don't crash
-        router.register(BrokerProvider.DERIV, stub)
-        router.register(BrokerProvider.METAAPI, stub)
+        router.register(BrokerProvider.METAAPI, StubBrokerClient())
         logger.warning(
-            "No DERIV_API_TOKEN or METAAPI_TOKEN configured — all brokers using StubBrokerClient (demo mode)"
+            "No METAAPI_TOKEN configured — MetaAPI (forex/index) trades will use "
+            "StubBrokerClient (demo). Synthetics use the real Deriv client."
         )
     else:
         logger.info(
