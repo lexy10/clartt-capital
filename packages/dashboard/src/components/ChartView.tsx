@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, useCallback, type FC } from 'react';
+import { useEffect, useRef, useState, useCallback, type FC, type CSSProperties } from 'react';
 import {
   createChart,
   ColorType,
@@ -14,6 +14,29 @@ import { useChartStore } from '../stores/chartStore';
 import { useAutopilotStore } from '../stores/autopilotStore';
 import type { Candle } from '../types/candle';
 import type { Signal } from '../types/signal';
+import { signalStrategyName, signalExecution } from '../types/signal';
+
+// Per-browser record of signals the user has hidden from the chart. Local only:
+// the signal stays in the DB and on the Signals page.
+const DISMISSED_KEY = 'dashboard:chart:dismissedSignals';
+function loadDismissedSignals(): Set<string> {
+  try {
+    const raw = localStorage.getItem(DISMISSED_KEY);
+    return new Set(raw ? (JSON.parse(raw) as string[]) : []);
+  } catch {
+    return new Set();
+  }
+}
+function saveDismissedSignals(ids: Set<string>) {
+  try {
+    localStorage.setItem(DISMISSED_KEY, JSON.stringify([...ids]));
+  } catch {
+    /* storage unavailable */
+  }
+}
+const TF_SECONDS: Record<string, number> = {
+  '1m': 60, '5m': 300, '15m': 900, '30m': 1800, '1h': 3600, '4h': 14400, '1d': 86400,
+};
 import type { Timeframe } from '../types/timeframe';
 import type { OverlayDirection, TradeMarker as AutopilotTradeMarker } from '../types/autopilot';
 import { useThemeStore } from '../stores/themeStore';
@@ -115,6 +138,10 @@ const ChartView: FC<ChartViewProps> = ({
       timestamp: string;
     };
   } | null>(null);
+
+  // Signals the user has hidden from the chart (local), + hover tooltip state.
+  const [dismissedSignals, setDismissedSignals] = useState<Set<string>>(() => loadDismissedSignals());
+  const [signalTip, setSignalTip] = useState<{ x: number; y: number; signal: Signal } | null>(null);
 
   const storeInstrument = useChartStore((s) => s.instrument);
   const storeTimeframe = useChartStore((s) => s.timeframe);
@@ -367,8 +394,9 @@ const ChartView: FC<ChartViewProps> = ({
     const tradeMarkerList = Array.isArray(tradeMarkers) ? tradeMarkers : [];
     const autopilotTradeMarkerList = Array.isArray(autopilotTradeMarkers) ? autopilotTradeMarkers : [];
 
-    // Signal markers
+    // Signal markers — skip ones the user has hidden.
     for (const signal of signalList) {
+      if (dismissedSignals.has(signal.id)) continue;
       markers.push({
         time: toChartTime(signal.created_at),
         position: signal.direction === 'BUY' ? 'belowBar' : 'aboveBar',
@@ -417,7 +445,7 @@ const ChartView: FC<ChartViewProps> = ({
     // Sort markers by time (required by lightweight-charts)
     markers.sort((a, b) => (a.time as number) - (b.time as number));
     series.setMarkers(markers);
-  }, [signals, tradeMarkers, autopilotTradeMarkers]);
+  }, [signals, tradeMarkers, autopilotTradeMarkers, dismissedSignals]);
 
   // Render autopilot strategy overlays (entry zones, exit zones, order blocks)
   // Batched in a single useEffect so all overlays update within one rendering frame
@@ -617,6 +645,76 @@ const ChartView: FC<ChartViewProps> = ({
     };
   }, [autopilotTradeMarkers]);
 
+  // Signal markers: hover shows a details tooltip; click hides that signal.
+  useEffect(() => {
+    const chart = chartRef.current;
+    if (!chart) return;
+    const visible = (Array.isArray(signals) ? signals : []).filter((s) => !dismissedSignals.has(s.id));
+    if (visible.length === 0) {
+      setSignalTip(null);
+      return;
+    }
+    // Tolerance ~ ¾ of a candle so a click/hover near the arrow matches it.
+    const threshold = Math.max(60, (TF_SECONDS[timeframe] ?? 300) * 0.75);
+    const nearest = (t: number): Signal | null => {
+      let best: Signal | null = null;
+      let bestDist = Infinity;
+      for (const s of visible) {
+        const st = Math.floor(new Date(s.created_at).getTime() / 1000);
+        const d = Math.abs(st - t);
+        if (d < bestDist && d <= threshold) { bestDist = d; best = s; }
+      }
+      return best;
+    };
+
+    const onMove = (param: { point?: { x: number; y: number }; time?: Time }) => {
+      if (!param.point || param.time == null) { setSignalTip(null); return; }
+      const s = nearest(param.time as number);
+      setSignalTip(s ? { x: param.point.x, y: param.point.y, signal: s } : null);
+    };
+    const onClick = (param: { time?: Time }) => {
+      if (param.time == null) return;
+      const s = nearest(param.time as number);
+      if (!s) return;
+      setDismissedSignals((prev) => {
+        const next = new Set(prev);
+        next.add(s.id);
+        saveDismissedSignals(next);
+        return next;
+      });
+      setSignalTip(null);
+    };
+
+    chart.subscribeCrosshairMove(onMove);
+    chart.subscribeClick(onClick);
+    return () => {
+      chart.unsubscribeCrosshairMove(onMove);
+      chart.unsubscribeClick(onClick);
+    };
+  }, [signals, dismissedSignals, timeframe]);
+
+  // Signal-marker hide controls (bulk).
+  const allSignals = Array.isArray(signals) ? signals : [];
+  const shownSignalCount = allSignals.filter((s) => !dismissedSignals.has(s.id)).length;
+  const hiddenSignalCount = allSignals.length - shownSignalCount;
+  const hideAllSignals = () => {
+    setDismissedSignals((prev) => {
+      const next = new Set(prev);
+      allSignals.forEach((s) => next.add(s.id));
+      saveDismissedSignals(next);
+      return next;
+    });
+    setSignalTip(null);
+  };
+  const showHiddenSignals = () => {
+    setDismissedSignals((prev) => {
+      const next = new Set(prev);
+      allSignals.forEach((s) => next.delete(s.id)); // only un-hide this view's signals
+      saveDismissedSignals(next);
+      return next;
+    });
+  };
+
   return (
     <div style={{ position: 'relative', width: '100%', height: '100%' }}>
       <div
@@ -669,8 +767,80 @@ const ChartView: FC<ChartViewProps> = ({
           </div>
         </div>
       )}
+
+      {/* Signal marker hover tooltip */}
+      {signalTip && (
+        <div
+          style={{
+            position: 'absolute',
+            left: signalTip.x + 16,
+            top: signalTip.y + 16,
+            background: 'var(--panel-bg)',
+            border: '1px solid var(--glass-border)',
+            borderRadius: 'var(--radius-md)',
+            padding: '8px 12px',
+            color: 'var(--text-primary)',
+            fontSize: 12,
+            fontFamily: 'var(--font-sans)',
+            pointerEvents: 'none',
+            zIndex: 100,
+            whiteSpace: 'nowrap',
+            lineHeight: 1.6,
+            boxShadow: 'var(--shadow-md)',
+          }}
+        >
+          <div style={{ fontWeight: 700, marginBottom: 2 }}>
+            <span style={{ color: signalTip.signal.direction === 'BUY' ? 'var(--success)' : 'var(--danger)' }}>
+              {signalTip.signal.direction}
+            </span>{' '}
+            {signalTip.signal.instrument}
+            <span style={{ color: 'var(--text-muted)', fontWeight: 400 }}> · {signalTip.signal.timeframe}</span>
+          </div>
+          <div style={{ color: 'var(--text-secondary)' }}>{signalStrategyName(signalTip.signal)}</div>
+          <div style={{ fontFamily: 'var(--font-mono)' }}>
+            E {signalTip.signal.entry_price.toFixed(2)} · SL {signalTip.signal.stop_loss.toFixed(2)} · TP {signalTip.signal.take_profit.toFixed(2)}
+          </div>
+          <div style={{ color: 'var(--text-secondary)' }}>
+            Confidence {signalTip.signal.confidence_score.toFixed(2)} · {signalExecution(signalTip.signal).label}
+          </div>
+          <div style={{ color: 'var(--text-muted)', fontSize: 11 }}>
+            {new Date(signalTip.signal.created_at).toLocaleString()}
+          </div>
+          <div style={{ color: 'var(--text-muted)', fontSize: 10, marginTop: 4, fontStyle: 'italic' }}>
+            click to hide
+          </div>
+        </div>
+      )}
+
+      {/* Signal hide controls */}
+      {(shownSignalCount > 0 || hiddenSignalCount > 0) && (
+        <div style={{ position: 'absolute', top: 8, left: 8, display: 'flex', gap: 6, zIndex: 60 }}>
+          {shownSignalCount > 0 && (
+            <button onClick={hideAllSignals} style={signalCtlBtn} title="Hide all signal markers on this chart">
+              Clear signals ({shownSignalCount})
+            </button>
+          )}
+          {hiddenSignalCount > 0 && (
+            <button onClick={showHiddenSignals} style={signalCtlBtn} title="Show signals hidden on this chart">
+              Show hidden ({hiddenSignalCount})
+            </button>
+          )}
+        </div>
+      )}
     </div>
   );
+};
+
+const signalCtlBtn: CSSProperties = {
+  background: 'var(--glass-bg)',
+  border: '1px solid var(--glass-border)',
+  borderRadius: 'var(--radius-sm)',
+  color: 'var(--text-secondary)',
+  padding: '3px 9px',
+  fontSize: 11,
+  fontFamily: 'var(--font-sans)',
+  cursor: 'pointer',
+  backdropFilter: 'blur(6px)',
 };
 
 export default ChartView;
