@@ -203,12 +203,22 @@ async def test_signal(request: TestSignalRequest) -> dict:
     # connect via loop.run_until_complete(), which raises "event loop is already
     # running" if called inside the async handler. Real AccountWorkers run in
     # their own threads, so this also matches the true execution context.
-    trace = await asyncio.to_thread(
-        worker.simulate_signal,
-        request.instrument,
-        request.direction,
-        request.place_live,
-    )
+    try:
+        trace = await asyncio.to_thread(
+            worker.simulate_signal,
+            request.instrument,
+            request.direction,
+            request.place_live,
+        )
+    except Exception as exc:
+        # A diagnostic must never 500 — return the error as trace context.
+        logger.exception("test-signal failed for account %s", request.account_id)
+        return {
+            "account_id": request.account_id,
+            "steps": [{"step": "test-signal", "ok": False, "detail": f"{type(exc).__name__}: {exc}"}],
+            "wouldTrade": False,
+            "placed": False,
+        }
     return {"account_id": request.account_id, **trace}
 
 

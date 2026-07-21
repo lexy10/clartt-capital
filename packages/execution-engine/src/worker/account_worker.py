@@ -27,7 +27,7 @@ from src.executor.trade_executor import TradeExecutor
 from src.persistence.trade_persister import TradePersister
 from src.kill_switch.kill_switch_monitor import KillSwitchMonitor
 from src.models import Signal, TradingAccount, TradeExecutionResult, TradeExecutionStatus
-from src.models.signal import SignalDirection, SignalMode
+from src.models.signal import SignalDirection, SignalMode, SignalMetadata, BOSType
 from src.models.timeframe import Timeframe
 from src.models.trading_event import (
     TradingEvent,
@@ -648,6 +648,15 @@ class AccountWorker:
             order_block_id="manual-test",
             strategy_id=strat_id,
             mode=SignalMode.LIVE,
+            # Risk checks read signal.metadata (e.g. spread_at_generation), so a
+            # synthetic signal must carry it — None would AttributeError.
+            metadata=SignalMetadata(
+                bos_type=BOSType.BULLISH if dir_enum == SignalDirection.BUY else BOSType.BEARISH,
+                liquidity_swept=False,
+                session="manual-test",
+                spread_at_generation=0.0,
+                volatility_ratio=1.0,
+            ),
             created_at=datetime.now(timezone.utc).isoformat(),
         )
         sig = self._resolve_broker_symbol(sig)
@@ -656,11 +665,17 @@ class AccountWorker:
             "stopLoss": stop_loss, "takeProfit": take_profit,
         }
 
-        # Risk validation.
-        risk = self._risk_manager.validate(sig, self._account)
-        rec("risk", risk.approved, "approved" if risk.approved else f"rejected by {getattr(risk.rejected_by, 'value', risk.rejected_by)}")
+        # Risk validation. Defensive: a diagnostic must never 500 — surface any
+        # failure as a ✗ gate instead.
+        try:
+            risk = self._risk_manager.validate(sig, self._account)
+            approved = risk.approved
+            rec("risk", approved, "approved" if approved else f"rejected by {getattr(risk.rejected_by, 'value', risk.rejected_by)}")
+        except Exception as exc:
+            approved = False
+            rec("risk", False, f"risk check error: {exc}")
 
-        would = (not ks_active) and ap_enabled and risk.approved
+        would = (not ks_active) and ap_enabled and approved
         result["wouldTrade"] = would
 
         if not place_live:
