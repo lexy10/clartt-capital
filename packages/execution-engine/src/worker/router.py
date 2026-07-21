@@ -199,10 +199,15 @@ async def test_signal(request: TestSignalRequest) -> dict:
         deriv_login_id=request.deriv_login_id,
     )
     worker = supervisor.build_worker(account)
-    trace = worker.simulate_signal(
-        instrument=request.instrument,
-        direction=request.direction,
-        place_live=request.place_live,
+    # Run in a worker thread — NOT this request's event loop. The broker clients
+    # connect via loop.run_until_complete(), which raises "event loop is already
+    # running" if called inside the async handler. Real AccountWorkers run in
+    # their own threads, so this also matches the true execution context.
+    trace = await asyncio.to_thread(
+        worker.simulate_signal,
+        request.instrument,
+        request.direction,
+        request.place_live,
     )
     return {"account_id": request.account_id, **trace}
 
