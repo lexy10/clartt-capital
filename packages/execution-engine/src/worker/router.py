@@ -49,6 +49,80 @@ def _get_supervisor() -> WorkerSupervisor:
     return _supervisor
 
 
+async def _fetch_account_snapshot(request: "StartWorkerRequest") -> tuple[float, float, int]:
+    """Fetch live (equity, balance, open_positions) from the broker.
+
+    Used by both /start (so the live worker's risk manager has real data) and
+    /test-signal (so the diagnostic's risk check isn't rejected for equity=0).
+    Returns defaults (0, 0, 0) on any failure — callers log and continue.
+    """
+    equity = 0.0
+    balance = 0.0
+    open_positions = 0
+
+    if request.broker_provider == "deriv" and request.deriv_api_token:
+        try:
+            import json, os
+            import websockets
+            from src.executor.clients.deriv import DERIV_WS_URL
+            app_id = os.environ.get("DERIV_APP_ID", "1089")
+            url = f"{DERIV_WS_URL}?app_id={app_id}"
+            async with websockets.connect(
+                url, ping_interval=30, ping_timeout=10, close_timeout=5,
+            ) as ws:
+                await ws.send(json.dumps({"authorize": request.deriv_api_token, "req_id": 1}))
+                resp = json.loads(await asyncio.wait_for(ws.recv(), timeout=10))
+                if "error" in resp:
+                    raise RuntimeError(f"Deriv authorize error: {resp['error']}")
+                auth = resp.get("authorize", {})
+                balance = float(auth.get("balance") or 0)
+                equity = balance  # no open positions tracked yet
+                logger.info(
+                    "Fetched Deriv account details for %s: loginid=%s, equity=%.2f, balance=%.2f, virtual=%s",
+                    request.account_id, auth.get("loginid"), equity, balance, bool(auth.get("is_virtual")),
+                )
+                try:
+                    await ws.send(json.dumps({"portfolio": 1, "req_id": 2}))
+                    pfresp = json.loads(await asyncio.wait_for(ws.recv(), timeout=10))
+                    contracts = pfresp.get("portfolio", {}).get("contracts", []) or []
+                    open_positions = len(contracts)
+                except Exception:
+                    open_positions = 0
+                try:
+                    import json as _json
+                    from redis import Redis as _Redis
+                    _redis = _Redis.from_url(os.environ.get("REDIS_URL", "redis://localhost:6379"))
+                    _redis.setex(
+                        f"account:liveBalance:{request.account_id}",
+                        86400,
+                        _json.dumps({"balance": balance, "equity": equity, "open_positions": open_positions}),
+                    )
+                except Exception:
+                    pass
+        except Exception:
+            logger.warning(
+                "Failed to fetch Deriv account details for %s — starting with defaults",
+                request.account_id, exc_info=True,
+            )
+    elif _provisioner is not None and request.metaapi_account_id:
+        try:
+            details = await _provisioner.get_details(request.metaapi_account_id)
+            equity = details.equity
+            balance = details.balance
+            open_positions = details.open_positions
+            logger.info(
+                "Fetched account details for %s: equity=%.2f, balance=%.2f, positions=%d",
+                request.account_id, equity, balance, open_positions,
+            )
+        except Exception:
+            logger.warning(
+                "Failed to fetch account details for %s — starting with defaults",
+                request.account_id, exc_info=True,
+            )
+
+    return equity, balance, open_positions
+
+
 class StartWorkerRequest(BaseModel):
     account_id: str
     user_id: str
@@ -74,85 +148,9 @@ async def start_worker(request: StartWorkerRequest) -> WorkerStatusResponse:
     """
     supervisor = _get_supervisor()
 
-    # Build base account
-    equity = 0.0
-    balance = 0.0
-    open_positions = 0
-
-    # Fetch live account info from broker.
-    # For MetaAPI accounts: use the provisioner.
-    # For Deriv-direct accounts: query the Deriv WebSocket balance API directly
-    # (don't go through the sync wrapper — we're already in an async context).
-    if request.broker_provider == "deriv" and request.deriv_api_token:
-        try:
-            import json, os
-            import websockets
-            from src.executor.clients.deriv import DERIV_WS_URL
-            app_id = os.environ.get("DERIV_APP_ID", "1089")
-            url = f"{DERIV_WS_URL}?app_id={app_id}"
-            async with websockets.connect(
-                url, ping_interval=30, ping_timeout=10, close_timeout=5,
-            ) as ws:
-                # 1. Authorize
-                await ws.send(json.dumps({"authorize": request.deriv_api_token, "req_id": 1}))
-                resp = json.loads(await asyncio.wait_for(ws.recv(), timeout=10))
-                if "error" in resp:
-                    raise RuntimeError(f"Deriv authorize error: {resp['error']}")
-                auth = resp.get("authorize", {})
-
-                balance = float(auth.get("balance") or 0)
-                equity = balance  # no open positions tracked yet
-                logger.info(
-                    "Fetched Deriv account details for %s: loginid=%s, equity=%.2f, balance=%.2f, virtual=%s",
-                    request.account_id, auth.get("loginid"), equity, balance, bool(auth.get("is_virtual")),
-                )
-
-                # 2. Open positions count
-                try:
-                    await ws.send(json.dumps({"portfolio": 1, "req_id": 2}))
-                    pfresp = json.loads(await asyncio.wait_for(ws.recv(), timeout=10))
-                    contracts = pfresp.get("portfolio", {}).get("contracts", []) or []
-                    open_positions = len(contracts)
-                except Exception:
-                    open_positions = 0
-
-                # 3. Cache live balance to Redis so the backend's performance
-                #    overview can include this Deriv account in totals
-                #    (no portfolio_snapshots row gets written for Deriv).
-                #    24h TTL gives the worker plenty of time to refresh —
-                #    the periodic balance loop in account_worker re-ups it.
-                try:
-                    import json as _json
-                    from redis import Redis as _Redis
-                    _redis = _Redis.from_url(os.environ.get("REDIS_URL", "redis://localhost:6379"))
-                    _redis.setex(
-                        f"account:liveBalance:{request.account_id}",
-                        86400,  # 24h TTL — periodic refresh keeps it warm
-                        _json.dumps({"balance": balance, "equity": equity, "open_positions": open_positions}),
-                    )
-                except Exception:
-                    pass
-        except Exception:
-            logger.warning(
-                "Failed to fetch Deriv account details for %s — starting with defaults",
-                request.account_id, exc_info=True,
-            )
-    elif _provisioner is not None and request.metaapi_account_id:
-        try:
-            details = await _provisioner.get_details(request.metaapi_account_id)
-            equity = details.equity
-            balance = details.balance
-            open_positions = details.open_positions
-            logger.info(
-                "Fetched account details for %s: equity=%.2f, balance=%.2f, positions=%d",
-                request.account_id, equity, balance, open_positions,
-            )
-        except Exception:
-            logger.warning(
-                "Failed to fetch account details for %s — starting with defaults",
-                request.account_id,
-                exc_info=True,
-            )
+    # Fetch live account info from broker (equity, balance, open positions) so
+    # the risk manager has accurate data. Falls back to zeros on failure.
+    equity, balance, open_positions = await _fetch_account_snapshot(request)
 
     account = TradingAccount(
         id=request.account_id,
@@ -188,6 +186,9 @@ async def test_signal(request: TestSignalRequest) -> dict:
     place_live=True places a REAL minimum-size order. Builds a transient worker
     so it works even when the account has no live (autopilot-on) worker."""
     supervisor = _get_supervisor()
+    # Fetch real equity/balance so the risk check reflects the live account —
+    # otherwise equity defaults to 0 and MAX_RISK_PER_TRADE always rejects.
+    equity, balance, open_positions = await _fetch_account_snapshot(request)
     account = TradingAccount(
         id=request.account_id,
         user_id=request.user_id,
@@ -197,6 +198,9 @@ async def test_signal(request: TestSignalRequest) -> dict:
         account_kind=request.account_kind,
         deriv_api_token=request.deriv_api_token,
         deriv_login_id=request.deriv_login_id,
+        equity=equity,
+        balance=balance,
+        open_positions=open_positions,
     )
     worker = supervisor.build_worker(account)
     # Run in a worker thread — NOT this request's event loop. The broker clients
