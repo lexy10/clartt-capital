@@ -174,6 +174,39 @@ async def start_worker(request: StartWorkerRequest) -> WorkerStatusResponse:
     )
 
 
+class TestSignalRequest(StartWorkerRequest):
+    """Same account fields as StartWorkerRequest, plus the test parameters."""
+    instrument: str
+    direction: str = "BUY"
+    place_live: bool = False
+
+
+@router.post("/test-signal")
+async def test_signal(request: TestSignalRequest) -> dict:
+    """Diagnostic: run a synthetic entry at the current price through the full
+    pipeline for the given account and report each gate. Dry-run by default;
+    place_live=True places a REAL minimum-size order. Builds a transient worker
+    so it works even when the account has no live (autopilot-on) worker."""
+    supervisor = _get_supervisor()
+    account = TradingAccount(
+        id=request.account_id,
+        user_id=request.user_id,
+        metaapi_account_id=request.metaapi_account_id,
+        label=request.label,
+        broker_provider=request.broker_provider,
+        account_kind=request.account_kind,
+        deriv_api_token=request.deriv_api_token,
+        deriv_login_id=request.deriv_login_id,
+    )
+    worker = supervisor.build_worker(account)
+    trace = worker.simulate_signal(
+        instrument=request.instrument,
+        direction=request.direction,
+        place_live=request.place_live,
+    )
+    return {"account_id": request.account_id, **trace}
+
+
 @router.post("/{account_id}/stop", response_model=WorkerStatusResponse)
 async def stop_worker(account_id: str) -> WorkerStatusResponse:
     """Stop the AccountWorker for the given account."""

@@ -16,6 +16,8 @@ import {
 import { AccountsService } from './accounts.service';
 import { InstrumentsService } from '../instruments/instruments.service';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
+import { RolesGuard } from '../../common/guards/roles.guard';
+import { Roles } from '../../common/decorators/roles.decorator';
 import { CreateAccountDto } from './dto/create-account.dto';
 import { UpdateLabelDto } from './dto/update-label.dto';
 import { UpdateDerivTokenDto } from './dto/update-deriv-token.dto';
@@ -75,6 +77,19 @@ export class AccountsController {
   ) {
     const account = await this.accountsService.updateLabel(req.user.id, id, dto.label);
     return AccountsService.sanitize(account);
+  }
+
+  /** Admin diagnostic: run a synthetic entry at the current price through the
+   *  full execution pipeline. Dry-run by default; { placeLive: true } places a
+   *  REAL minimum-size order (the UI confirms before sending that). */
+  @Post(':id/test-signal')
+  @UseGuards(RolesGuard)
+  @Roles('admin')
+  async testSignal(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() body: { instrument: string; direction?: string; placeLive?: boolean },
+  ) {
+    return this.accountsService.testSignal(id, body);
   }
 
   @Patch(':id/deriv-token')

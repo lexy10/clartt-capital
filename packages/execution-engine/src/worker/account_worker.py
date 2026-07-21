@@ -14,6 +14,8 @@ Updates are received via the ``account:strategies:channel`` pub/sub channel.
 import json
 import logging
 import threading
+import uuid
+from datetime import datetime, timezone
 from typing import Optional
 
 from redis import Redis
@@ -25,6 +27,8 @@ from src.executor.trade_executor import TradeExecutor
 from src.persistence.trade_persister import TradePersister
 from src.kill_switch.kill_switch_monitor import KillSwitchMonitor
 from src.models import Signal, TradingAccount, TradeExecutionResult, TradeExecutionStatus
+from src.models.signal import SignalDirection, SignalMode
+from src.models.timeframe import Timeframe
 from src.models.trading_event import (
     TradingEvent,
     TradingEventType,
@@ -554,6 +558,153 @@ class AccountWorker:
         )
 
         return execution_result
+
+    def simulate_signal(
+        self, instrument: str, direction: str, place_live: bool = False
+    ) -> dict:
+        """Run a synthetic entry at the CURRENT price through the full live
+        pipeline and report each gate. Diagnostic for 'signal fired but no
+        trade' — isolates strategy logic from execution plumbing.
+
+        Dry-run by default (stops before the broker order). place_live=True
+        places a REAL minimum-size order and persists/monitors it like a normal
+        fill. The caller is responsible for gating place_live (admin + confirm).
+        """
+        steps: list[dict] = []
+
+        def rec(name: str, ok: bool, detail: str = "") -> bool:
+            steps.append({"step": name, "ok": bool(ok), "detail": str(detail)})
+            return ok
+
+        dir_enum = SignalDirection.BUY if str(direction).upper() == "BUY" else SignalDirection.SELL
+
+        ks_active = self._kill_switch.is_active()
+        rec("kill_switch", not ks_active, "ACTIVE — blocks all trading" if ks_active else "off")
+
+        ap_enabled = True
+        if self._autopilot_monitor is not None:
+            ap_enabled = self._autopilot_monitor.is_enabled(self._account.id)
+        rec("autopilot", ap_enabled, "enabled" if ap_enabled else "DISABLED — the live worker won't open trades")
+
+        if self._assigned_strategy_ids:
+            strat_id = sorted(self._assigned_strategy_ids)[0]
+            rec("strategy_assignment", True, f"{len(self._assigned_strategy_ids)} strategy(ies) assigned")
+        else:
+            strat_id = "00000000-0000-0000-0000-000000000000"
+            rec("strategy_assignment", True, "no explicit assignment — account accepts all strategies")
+
+        result: dict = {"steps": steps, "wouldTrade": False, "placed": False}
+
+        # Resolve broker client for this instrument + account.
+        try:
+            client = self._executor._resolve_client(instrument, self._account)
+            provider = getattr(getattr(client, "provider", None), "value", None) or "?"
+            rec("broker_resolve", True, f"routed to {provider}")
+        except Exception as exc:
+            rec("broker_resolve", False, f"no broker client for {instrument}: {exc}")
+            return result
+
+        # Connect with the account's own credentials (also needed for a price).
+        try:
+            self._executor._connect_with_retry(self._account, client)
+            rec("broker_connect", True, "connected with account credentials")
+        except Exception as exc:
+            rec("broker_connect", False, f"connect failed: {exc}")
+            return result
+
+        # Current price.
+        broker_sym = self._broker_symbol_map.get(instrument, instrument)
+        tick = None
+        try:
+            tick = client.get_symbol_info_tick(broker_sym)
+        except Exception:
+            tick = None
+        price = None
+        if tick:
+            price = tick.get("bid") or tick.get("ask") or tick.get("current_price")
+        if not price:
+            rec("current_price", False, f"no tick available for {broker_sym}")
+            return result
+        price = float(price)
+        rec("current_price", True, f"{broker_sym} @ {price}")
+
+        # Build a synthetic signal with a small SL/TP around the current price.
+        dist = max(price * 0.005, 0.01)
+        if dir_enum == SignalDirection.BUY:
+            stop_loss, take_profit = price - dist, price + 2 * dist
+        else:
+            stop_loss, take_profit = price + dist, price - 2 * dist
+
+        sig = Signal(
+            id=str(uuid.uuid4()),
+            instrument=instrument,
+            direction=dir_enum,
+            entry_price=price,
+            stop_loss=stop_loss,
+            take_profit=take_profit,
+            position_size=1.0,
+            confidence_score=0.99,
+            timeframe=Timeframe.FIVE_MINUTES,
+            order_block_id="manual-test",
+            strategy_id=strat_id,
+            mode=SignalMode.LIVE,
+            created_at=datetime.now(timezone.utc).isoformat(),
+        )
+        sig = self._resolve_broker_symbol(sig)
+        result["signal"] = {
+            "direction": dir_enum.value, "entry": price,
+            "stopLoss": stop_loss, "takeProfit": take_profit,
+        }
+
+        # Risk validation.
+        risk = self._risk_manager.validate(sig, self._account)
+        rec("risk", risk.approved, "approved" if risk.approved else f"rejected by {getattr(risk.rejected_by, 'value', risk.rejected_by)}")
+
+        would = (not ks_active) and ap_enabled and risk.approved
+        result["wouldTrade"] = would
+
+        if not place_live:
+            return result
+
+        if not would:
+            rec("execution", False, "skipped — a gate above failed")
+            return result
+
+        # Place the REAL order and treat it like a normal fill.
+        try:
+            exec_res = self._executor.execute(sig, self._account)
+            filled = exec_res.status == TradeExecutionStatus.FILLED
+            result["placed"] = True
+            result["execution"] = {
+                "status": exec_res.status.value,
+                "orderId": exec_res.order_id,
+                "fillPrice": exec_res.fill_price,
+                "rejectionReason": exec_res.rejection_reason,
+            }
+            rec("execution", filled, f"status={exec_res.status.value} order={exec_res.order_id}")
+
+            if filled and self._trade_persister is not None:
+                try:
+                    self._trade_persister.record_entry(
+                        trade_id=exec_res.id, signal_id=exec_res.signal_id,
+                        account_id=self._account.id, instrument=sig.instrument,
+                        direction=sig.direction.value, entry_price=sig.entry_price,
+                        fill_price=exec_res.fill_price, position_size=sig.position_size,
+                        broker_order_id=exec_res.order_id, status=exec_res.status.value,
+                        execution_latency_ms=int(exec_res.execution_latency_ms),
+                        slippage=exec_res.slippage, spread_at_execution=exec_res.spread_at_execution,
+                    )
+                except Exception:
+                    logger.exception("[account:%s] test-signal persist failed", self._account.id)
+            if filled and self._position_monitor is not None:
+                self._position_monitor.track_position(
+                    position_id=exec_res.order_id, signal=sig,
+                    account=self._account, fill_price=exec_res.fill_price,
+                )
+        except Exception as exc:
+            rec("execution", False, f"execute error: {exc}")
+
+        return result
 
     def _publish_risk_evaluated_event(self, signal: Signal, risk_result) -> None:
         """Publish a RiskEvaluated event after risk validation (fire-and-forget)."""

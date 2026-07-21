@@ -53,6 +53,12 @@ class WorkerSupervisor:
         with self._lock:
             return list(self._workers.keys())
 
+    def build_worker(self, account: TradingAccount):
+        """Create a worker WITHOUT starting its thread. Used by the test-signal
+        diagnostic to run a synthetic entry through the pipeline for an account
+        even if it has no live (autopilot-on) worker."""
+        return self._worker_factory(account)
+
     def start_worker(self, account: TradingAccount) -> None:
         """Create and start a worker thread for the given account.
 

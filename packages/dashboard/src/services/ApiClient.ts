@@ -30,6 +30,7 @@ import type {
   AccountInstrument,
   AdminUser,
   CurrentUserDto,
+  TestSignalResult,
   AccountStrategy,
   CreateInstrumentDto,
   UpdateInstrumentDto,
@@ -429,6 +430,13 @@ export function createApiClient(baseURL?: string): ApiClient {
       },
       async updateDerivToken(id: string, dto: { derivApiToken: string; derivLoginId?: string }): Promise<TradingAccount> {
         const { data } = await http.patch<TradingAccount>(`/accounts/${id}/deriv-token`, dto);
+        return data;
+      },
+      async testSignal(
+        id: string,
+        dto: { instrument: string; direction?: string; placeLive?: boolean },
+      ): Promise<TestSignalResult> {
+        const { data } = await http.post<TestSignalResult>(`/accounts/${id}/test-signal`, dto);
         return data;
       },
       async remove(id: string): Promise<void> {

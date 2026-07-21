@@ -277,6 +277,47 @@ export class AccountsService {
    * Deriv status endpoint which authorizes with the account's stored token
    * and returns live balance + connection state.
    */
+  /** Admin diagnostic: run a synthetic entry at the current price through the
+   *  full execution pipeline for this account and return the per-gate trace.
+   *  Dry-run by default; `placeLive` places a REAL minimum-size order. The
+   *  controller gates this to admin+; here we load the account by id directly
+   *  (an admin may test any account). Deriv token is decrypted by the
+   *  entity transformer before it's forwarded to the engine. */
+  async testSignal(
+    accountId: string,
+    opts: { instrument: string; direction?: string; placeLive?: boolean },
+  ): Promise<unknown> {
+    const account = await this.tradingAccountRepo.findOne({ where: { id: accountId } });
+    if (!account) {
+      throw new NotFoundException('Trading account not found');
+    }
+    const payload = {
+      account_id: account.id,
+      user_id: account.userId,
+      metaapi_account_id: account.metaapiAccountId,
+      label: account.label ?? '',
+      broker_provider: account.brokerProvider,
+      account_kind: account.accountKind,
+      deriv_api_token: account.derivApiToken,
+      deriv_login_id: account.derivLoginId,
+      instrument: opts.instrument,
+      direction: (opts.direction ?? 'BUY').toUpperCase(),
+      place_live: !!opts.placeLive,
+    };
+    const { data } = await this.circuitBreaker.execute(
+      () =>
+        firstValueFrom(
+          this.httpService.post(`${this.engineBaseUrl}/workers/test-signal`, payload, {
+            timeout: 30000,
+          }),
+        ),
+      () => {
+        throw new HttpException('Execution Engine is unavailable', HttpStatus.SERVICE_UNAVAILABLE);
+      },
+    );
+    return data;
+  }
+
   private async getDerivStatus(
     account: TradingAccount,
   ): Promise<{ state: string; connection_status: string }> {

@@ -3,7 +3,9 @@ import type { TradingAccount } from '../types/trading-account';
 import type { Strategy, AccountStrategy } from '../types/api';
 import { useAccountStore } from '../stores/accountStore';
 import { useStrategyStore } from '../stores/strategyStore';
+import { useAuthStore } from '../stores/authStore';
 import { apiClient } from '../services/ApiClient';
+import type { TestSignalResult } from '../types/api';
 
 interface AccountCardProps {
   account: TradingAccount;
@@ -43,6 +45,17 @@ const AccountCard: FC<AccountCardProps> = ({ account }) => {
   const [tokenLoginDraft, setTokenLoginDraft] = useState('');
   const [savingToken, setSavingToken] = useState(false);
   const [tokenError, setTokenError] = useState<string | null>(null);
+
+  // Admin-only test-signal diagnostic
+  const role = useAuthStore((s) => s.currentUser?.role);
+  const isAdmin = role === 'admin' || role === 'superadmin';
+  const [showTest, setShowTest] = useState(false);
+  const [testInstrument, setTestInstrument] = useState('');
+  const [testDirection, setTestDirection] = useState<'BUY' | 'SELL'>('BUY');
+  const [testRunning, setTestRunning] = useState(false);
+  const [testResult, setTestResult] = useState<TestSignalResult | null>(null);
+  const [testError, setTestError] = useState<string | null>(null);
+  const [confirmLive, setConfirmLive] = useState(false);
 
   const details = accountDetails[account.id];
 
@@ -190,6 +203,31 @@ const AccountCard: FC<AccountCardProps> = ({ account }) => {
     const instruments = strategy.config?.instruments;
     if (Array.isArray(instruments)) return instruments as string[];
     return [];
+  };
+
+  // Default the test instrument to one this account actually trades.
+  const assignedInstruments = accountStrategies.flatMap((as) =>
+    as.strategy ? getStrategyInstruments(as.strategy) : [],
+  );
+  const defaultTestInstrument = assignedInstruments[0] || 'R_25';
+
+  const runTest = async (placeLive: boolean) => {
+    const instrument = (testInstrument || defaultTestInstrument).trim();
+    if (!instrument) { setTestError('Enter an instrument (e.g. R_25)'); return; }
+    setTestRunning(true);
+    setTestError(null);
+    if (!placeLive) setTestResult(null);
+    try {
+      const res = await apiClient.accounts.testSignal(account.id, {
+        instrument, direction: testDirection, placeLive,
+      });
+      setTestResult(res);
+    } catch (e) {
+      setTestError(e instanceof Error ? e.message : 'Test failed');
+    } finally {
+      setTestRunning(false);
+      setConfirmLive(false);
+    }
   };
 
   const handleEditStrategies = async () => {
@@ -448,6 +486,74 @@ const AccountCard: FC<AccountCardProps> = ({ account }) => {
               Cancel
             </button>
           </div>
+        </div>
+      )}
+
+      {/* Admin diagnostic: fire a synthetic entry at the current price through
+          the full execution pipeline to see whether (and where) it would trade. */}
+      {isAdmin && (
+        <div style={{ marginTop: 10, borderTop: '1px solid var(--glass-border)', paddingTop: 10 }}>
+          <button onClick={() => setShowTest((v) => !v)} style={smallBtnStyle}>
+            {showTest ? 'Hide test' : '🧪 Test signal'}
+          </button>
+          {showTest && (
+            <div style={{ marginTop: 8, display: 'flex', flexDirection: 'column', gap: 8 }}>
+              <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
+                <input
+                  value={testInstrument}
+                  onChange={(e) => setTestInstrument(e.target.value)}
+                  placeholder={defaultTestInstrument}
+                  style={{ ...labelInputStyle, width: 90 }}
+                />
+                {(['BUY', 'SELL'] as const).map((d) => (
+                  <button key={d} onClick={() => setTestDirection(d)}
+                    style={{ ...smallBtnStyle,
+                      background: testDirection === d ? 'var(--accent-dim)' : 'var(--bg-surface)',
+                      color: testDirection === d ? 'var(--accent)' : 'var(--text-secondary)' }}>{d}</button>
+                ))}
+                <button onClick={() => runTest(false)} disabled={testRunning} style={accentBtnStyle}>
+                  {testRunning ? 'Running…' : 'Dry run'}
+                </button>
+              </div>
+              {testError && <div style={{ fontSize: 11, color: 'var(--danger)' }}>{testError}</div>}
+              {testResult && (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 3, fontSize: 11 }}>
+                  {testResult.steps.map((s, i) => (
+                    <div key={i} style={{ display: 'flex', gap: 6, fontFamily: 'var(--font-mono)' }}>
+                      <span style={{ color: s.ok ? 'var(--success)' : 'var(--danger)' }}>{s.ok ? '✓' : '✗'}</span>
+                      <span style={{ color: 'var(--text-secondary)', minWidth: 118 }}>{s.step}</span>
+                      <span style={{ color: 'var(--text-muted)' }}>{s.detail}</span>
+                    </div>
+                  ))}
+                  <div style={{ marginTop: 4, fontWeight: 700,
+                    color: testResult.placed
+                      ? (testResult.execution?.status === 'filled' ? 'var(--success)' : 'var(--danger)')
+                      : testResult.wouldTrade ? 'var(--success)' : 'var(--danger)' }}>
+                    {testResult.placed
+                      ? `Placed: ${testResult.execution?.status ?? '—'} (order ${testResult.execution?.orderId ?? '—'})`
+                      : testResult.wouldTrade
+                        ? 'Would place a trade ✓ (dry run — no order sent)'
+                        : 'Would NOT trade — see the ✗ gate above'}
+                  </div>
+                  {testResult.wouldTrade && !testResult.placed && (
+                    confirmLive ? (
+                      <div style={{ display: 'flex', gap: 6, alignItems: 'center', marginTop: 4 }}>
+                        <span style={{ fontSize: 11, color: 'var(--danger)' }}>Place a REAL order (uses funds)?</span>
+                        <button onClick={() => runTest(true)} disabled={testRunning} style={dangerBtnStyle}>
+                          {testRunning ? 'Placing…' : 'Yes, place real order'}
+                        </button>
+                        <button onClick={() => setConfirmLive(false)} style={smallBtnStyle}>Cancel</button>
+                      </div>
+                    ) : (
+                      <button onClick={() => setConfirmLive(true)} style={{ ...dangerBtnStyle, marginTop: 4 }}>
+                        Place REAL order…
+                      </button>
+                    )
+                  )}
+                </div>
+              )}
+            </div>
+          )}
         </div>
       )}
 

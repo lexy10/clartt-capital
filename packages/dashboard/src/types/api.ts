@@ -247,6 +247,23 @@ export interface AdminUser {
   createdAt: string;
 }
 
+export interface TestSignalStep {
+  step: string;
+  ok: boolean;
+  detail: string;
+}
+
+/** Result of POST /accounts/:id/test-signal — a per-gate trace of a synthetic
+ *  entry pushed through the execution pipeline. */
+export interface TestSignalResult {
+  account_id: string;
+  steps: TestSignalStep[];
+  wouldTrade: boolean;
+  placed: boolean;
+  signal?: { direction: string; entry: number; stopLoss: number; takeProfit: number };
+  execution?: { status: string; orderId: number; fillPrice: number; rejectionReason?: string | null };
+}
+
 /** The signed-in user, as returned by GET /users/me. */
 export interface CurrentUserDto {
   id: string;
@@ -331,6 +348,7 @@ export interface ApiClient {
     getStatus(id: string): Promise<{ state: string; connection_status: string }>;
     updateLabel(id: string, label: string): Promise<TradingAccount>;
     updateDerivToken(id: string, dto: { derivApiToken: string; derivLoginId?: string }): Promise<TradingAccount>;
+    testSignal(id: string, dto: { instrument: string; direction?: string; placeLive?: boolean }): Promise<TestSignalResult>;
     remove(id: string): Promise<void>;
     deploy(id: string): Promise<void>;
     undeploy(id: string): Promise<void>;
