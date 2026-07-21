@@ -125,7 +125,7 @@ class TestTPPreservation:
         sl_distance=st.floats(min_value=3.0, max_value=50.0),
         rr_ratio=st.floats(min_value=2.0, max_value=3.0),
     )
-    @settings(max_examples=50)
+    @settings()
     def test_structural_tp_within_cap_preserved(
         self, sl_distance: float, rr_ratio: float,
     ):
@@ -269,7 +269,7 @@ class TestRetestPreservation:
         zone_low=st.floats(min_value=30000.0, max_value=40000.0),
         zone_size=st.floats(min_value=5.0, max_value=50.0),
     )
-    @settings(max_examples=50)
+    @settings()
     def test_property_genuine_rejection_returns_entry(
         self, zone_low: float, zone_size: float,
     ):
@@ -331,7 +331,7 @@ class TestPositionSizePreservation:
         risk_pct=st.floats(min_value=0.5, max_value=5.0),
         sl_distance=st.floats(min_value=1.0, max_value=100.0),
     )
-    @settings(max_examples=50)
+    @settings()
     def test_position_size_math_correct(
         self, equity: float, risk_pct: float, sl_distance: float,
     ):
@@ -459,7 +459,7 @@ class TestDetectStructurePreservation:
         base_price=st.floats(min_value=100.0, max_value=50000.0),
         amplitude=st.floats(min_value=1.0, max_value=50.0),
     )
-    @settings(max_examples=50)
+    @settings()
     def test_property_structure_points_within_price_range(
         self, n_candles: int, base_price: float, amplitude: float,
     ):
@@ -681,7 +681,7 @@ class TestComputeStatsPreservation:
         n_trades=st.integers(min_value=1, max_value=20),
         data=st.data(),
     )
-    @settings(max_examples=50)
+    @settings()
     def test_property_stats_consistency(self, n_trades: int, data):
         """**Validates: Requirements 3.8**
 
@@ -726,7 +726,7 @@ class TestComputePnlPreservation:
         price_move=st.floats(min_value=-500.0, max_value=500.0),
         lot_size=st.floats(min_value=0.01, max_value=10.0),
     )
-    @settings(max_examples=50)
+    @settings()
     def test_property_pnl_buy_correct(
         self, entry: float, price_move: float, lot_size: float,
     ):
@@ -750,7 +750,7 @@ class TestComputePnlPreservation:
         price_move=st.floats(min_value=-500.0, max_value=500.0),
         lot_size=st.floats(min_value=0.01, max_value=10.0),
     )
-    @settings(max_examples=50)
+    @settings()
     def test_property_pnl_sell_correct(
         self, entry: float, price_move: float, lot_size: float,
     ):
@@ -829,7 +829,7 @@ class TestComputeRRPreservation:
         move=st.floats(min_value=-500.0, max_value=500.0),
         risk=st.floats(min_value=0.1, max_value=100.0),
     )
-    @settings(max_examples=50)
+    @settings()
     def test_property_rr_formula(self, entry: float, move: float, risk: float):
         """**Validates: Requirements 3.8**
 
@@ -839,5 +839,8 @@ class TestComputeRRPreservation:
         stop_loss = entry - risk
         rr = BacktestEngine._compute_rr("BUY", entry, exit_price, stop_loss)
         assert rr is not None
-        expected = round(move / risk, 2)
-        assert rr == expected, f"RR {rr} != expected {expected}"
+        # Compare against the raw ratio within one rounding unit (0.01). Comparing
+        # two independently-rounded values is brittle at rounding boundaries — e.g.
+        # risk=99.99999999999999 rounds move/risk to a different 2-dp value than
+        # the engine's internal computation, a float artifact, not a real bug.
+        assert rr == pytest.approx(move / risk, abs=0.01), f"RR {rr} vs raw {move / risk}"

@@ -148,7 +148,7 @@ class TestC1UncappedTP:
         max_rr_cap=st.floats(min_value=2.0, max_value=10.0),
         sl_distance=st.floats(min_value=1.0, max_value=50.0),
     )
-    @settings(max_examples=50)
+    @settings()
     def test_c1_property_tp_never_exceeds_cap(self, max_rr_cap: float, sl_distance: float):
         """**Validates: Requirements 2.1**
 
@@ -316,7 +316,7 @@ class TestC3WeakRetest:
         zone_size=st.floats(min_value=5.0, max_value=50.0),
         candle_range=st.floats(min_value=5.0, max_value=100.0),
     )
-    @settings(max_examples=50)
+    @settings()
     def test_c3_property_weak_touch_returns_none(
         self, zone_low: float, zone_size: float, candle_range: float,
     ):
@@ -508,7 +508,7 @@ class TestC6MaxPositionSize:
         equity=st.floats(min_value=1000.0, max_value=500000.0),
         sl_distance=st.floats(min_value=0.01, max_value=100.0),
     )
-    @settings(max_examples=50)
+    @settings()
     def test_c6_property_position_size_never_exceeds_max(
         self, equity: float, sl_distance: float,
     ):

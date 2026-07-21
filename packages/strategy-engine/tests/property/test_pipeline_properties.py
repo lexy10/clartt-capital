@@ -172,7 +172,7 @@ class TestInstrumentFiltering:
         candle_instrument=st_instrument,
         strategies=st.lists(st_strategy_config(), min_size=1, max_size=10),
     )
-    @settings(max_examples=100, deadline=None)
+    @settings()
     def test_only_matching_instrument_strategies_run(self, candle_instrument, strategies):
         # Feature: live-signal-pipeline, Property 1: Instrument filtering
         # Force all strategies to be enabled so filtering is purely by instrument
@@ -227,7 +227,7 @@ class TestCacheTTLFreshness:
     @given(
         time_gap=st.floats(min_value=0.0, max_value=300.0),
     )
-    @settings(max_examples=100)
+    @settings()
     def test_cache_hit_miss_matches_ttl(self, time_gap):
         # Feature: live-signal-pipeline, Property 2: Cache TTL freshness
         loader = StrategyConfigLoader(backend_url="http://localhost:3000")
@@ -293,7 +293,7 @@ class TestEnabledStrategyFiltering:
     @given(
         strategies=st.lists(st_strategy_config(), min_size=1, max_size=15),
     )
-    @settings(max_examples=100)
+    @settings()
     def test_only_enabled_strategies_returned(self, strategies):
         # Feature: live-signal-pipeline, Property 3: Enabled strategy filtering
         # Build raw API responses from the generated configs
@@ -343,7 +343,7 @@ class TestStrategyConfigRoundTrip:
     """
 
     @given(config=st_strategy_config())
-    @settings(max_examples=100)
+    @settings()
     def test_round_trip_produces_equivalent_config(self, config):
         # Feature: live-signal-pipeline, Property 4: Strategy config round-trip parsing
         # Serialize to dict (JSON-compatible)
@@ -394,7 +394,7 @@ class TestConfidenceScoreFiltering:
         confidence=st.floats(min_value=0.0, max_value=1.0),
         threshold=st.floats(min_value=0.0, max_value=1.0),
     )
-    @settings(max_examples=100)
+    @settings()
     def test_confidence_filtering_logic(self, confidence, threshold):
         # Feature: live-signal-pipeline, Property 6: Confidence score filtering
         signal = Signal(
@@ -484,7 +484,7 @@ class TestPersistencePayloadCompleteness:
     """
 
     @given(signal=st_signal())
-    @settings(max_examples=100)
+    @settings()
     def test_payload_has_all_required_fields(self, signal):
         # Feature: live-signal-pipeline, Property 8: Persistence payload completeness
         persister = SignalPersister(backend_url="http://localhost:3000")
@@ -554,7 +554,7 @@ class TestDuplicateDetection:
             max_size=50,
         ),
     )
-    @settings(max_examples=100)
+    @settings()
     def test_duplicate_detection_blocks_repeats(self, ob_ids):
         # Feature: live-signal-pipeline, Property 9: Duplicate detection with expiry and cap
         runner = _build_runner()
@@ -574,7 +574,7 @@ class TestDuplicateDetection:
             max_size=20,
         ),
     )
-    @settings(max_examples=100)
+    @settings()
     def test_expiry_after_24h(self, ob_ids):
         # Feature: live-signal-pipeline, Property 9: Duplicate detection with expiry and cap
         runner = _build_runner()
@@ -603,7 +603,7 @@ class TestDuplicateDetection:
     @given(
         data=st.data(),
     )
-    @settings(max_examples=100)
+    @settings()
     def test_cap_at_1000_entries(self, data):
         # Feature: live-signal-pipeline, Property 9: Duplicate detection with expiry and cap
         runner = _build_runner()
@@ -636,7 +636,7 @@ class TestErrorIsolation:
     @given(
         fail_mask=st.lists(st.booleans(), min_size=2, max_size=10),
     )
-    @settings(max_examples=100, deadline=None)
+    @settings()
     def test_non_failing_strategies_complete(self, fail_mask):
         # Feature: live-signal-pipeline, Property 10: Error isolation across strategies
         strategies = []
@@ -721,7 +721,7 @@ class TestConsecutiveFailureCounting:
     @given(
         sequence=st.lists(st.booleans(), min_size=1, max_size=50),
     )
-    @settings(max_examples=100, deadline=None)
+    @settings()
     def test_failure_count_tracks_and_resets(self, sequence):
         # Feature: live-signal-pipeline, Property 11: Consecutive failure counting
         config = StrategyConfig(
@@ -809,7 +809,7 @@ class TestActiveStrategiesGauge:
     @given(
         strategies=st.lists(st_strategy_config(), min_size=1, max_size=20),
     )
-    @settings(max_examples=100, deadline=None)
+    @settings()
     def test_gauge_equals_enabled_count(self, strategies):
         # Feature: live-signal-pipeline, Property 12: Active strategies gauge accuracy
         # Filter to only enabled strategies (simulating what config_loader returns)

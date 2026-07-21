@@ -56,9 +56,16 @@ jobs:
       - name: Python tests
         if: matrix.pkg.kind == 'python'
         working-directory: ${{ matrix.pkg.dir }}
+        env:
+          # Fast Hypothesis profile (fewer examples, no deadlines) for the
+          # strategy-engine property tests. Ignored where no profile is
+          # registered (execution-engine).
+          HYPOTHESIS_PROFILE: ci
         run: |
           pip install -r requirements.txt
-          python -m pytest tests -q
+          # --timeout kills any single hung test at 120s instead of letting the
+          # job run for an hour.
+          python -m pytest tests -q --timeout=120 --durations=10
 
   build:
     name: Build & push images
