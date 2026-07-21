@@ -48,11 +48,11 @@ const REFRESH_KEY = 'clartt:overviewRefreshMs';
 function loadInitialRefreshMs(): number {
   try {
     const raw = typeof localStorage !== 'undefined' ? localStorage.getItem(REFRESH_KEY) : null;
-    if (raw === null) return 60_000; // default: 1 minute
+    if (raw === null) return 30_000; // default: 30 seconds
     const n = Number(raw);
-    return Number.isFinite(n) && n >= 0 ? n : 60_000;
+    return Number.isFinite(n) && n >= 0 ? n : 30_000;
   } catch {
-    return 60_000;
+    return 30_000;
   }
 }
 

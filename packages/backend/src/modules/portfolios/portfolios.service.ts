@@ -1,7 +1,7 @@
 import { Injectable, Inject, Logger } from '@nestjs/common';
 import { HttpService } from '@nestjs/axios';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, In } from 'typeorm';
+import { Repository, In, IsNull } from 'typeorm';
 import { Interval } from '@nestjs/schedule';
 import Redis from 'ioredis';
 import { firstValueFrom } from 'rxjs';
@@ -76,10 +76,76 @@ export class PortfoliosService {
     }
 
     const accountIds = accounts.map((a) => a.id);
-    return this.positionsRepository.find({
+
+    // 1. Reconciled positions — only MetaAPI accounts populate this table.
+    const positions = await this.positionsRepository.find({
       where: { accountId: In(accountIds) },
       order: { openedAt: 'DESC' },
     });
+
+    // 2. Deriv-direct accounts are skipped by reconciliation (see
+    //    reconciliation.service — no MetaAPI ID), so their open positions never
+    //    land in the positions table. Read them straight from the trades table
+    //    instead: a trade is still open when status='filled' and closed_at IS
+    //    NULL. Scoping to Deriv accounts avoids double-counting MetaAPI rows.
+    const derivAccountIds = accounts
+      .filter((a) => !a.metaapiAccountId)
+      .map((a) => a.id);
+    const openTrades = derivAccountIds.length
+      ? await this.tradesRepository.find({
+          where: {
+            accountId: In(derivAccountIds),
+            status: 'filled',
+            closedAt: IsNull(),
+          },
+          order: { openedAt: 'DESC' },
+        })
+      : [];
+
+    // Map both sources to a single snake_case shape the dashboard expects
+    // (the raw TypeORM entities are camelCase, which the UI can't read).
+    const fromPositions = positions.map((p) => {
+      const entry = parseFloat(p.entryPrice);
+      const current = p.currentPrice != null ? parseFloat(p.currentPrice) : undefined;
+      const size = parseFloat(p.positionSize);
+      const dir = p.direction === 'BUY' ? 1 : -1;
+      const unrealized =
+        p.unrealizedPnl != null
+          ? parseFloat(p.unrealizedPnl)
+          : current != null
+            ? (current - entry) * size * dir
+            : undefined;
+      return {
+        id: p.id,
+        account_id: p.accountId,
+        trade_id: p.tradeId,
+        instrument: p.instrument,
+        direction: p.direction,
+        entry_price: entry,
+        current_price: current,
+        position_size: size,
+        unrealized_pnl: unrealized,
+        opened_at: p.openedAt?.toISOString() ?? null,
+      };
+    });
+
+    const fromTrades = openTrades.map((t) => {
+      const entry = parseFloat(t.fillPrice ?? t.entryPrice ?? '0');
+      return {
+        id: t.id,
+        account_id: t.accountId,
+        trade_id: t.id,
+        instrument: t.instrument ?? '—',
+        direction: t.direction,
+        entry_price: Number.isFinite(entry) ? entry : 0,
+        current_price: undefined, // live price/PnL isn't tracked in this table
+        position_size: parseFloat(t.positionSize),
+        unrealized_pnl: undefined,
+        opened_at: (t.openedAt ?? t.createdAt)?.toISOString() ?? null,
+      };
+    });
+
+    return [...fromPositions, ...fromTrades];
   }
 
   async getHistory(userId: string, page: number, limit: number) {
