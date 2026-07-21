@@ -696,7 +696,10 @@ class AccountWorker:
                 "fillPrice": exec_res.fill_price,
                 "rejectionReason": exec_res.rejection_reason,
             }
-            rec("execution", filled, f"status={exec_res.status.value} order={exec_res.order_id}")
+            detail = f"status={exec_res.status.value} order={exec_res.order_id}"
+            if not filled and exec_res.rejection_reason:
+                detail += f" — {exec_res.rejection_reason}"
+            rec("execution", filled, detail)
 
             if filled and self._trade_persister is not None:
                 try:
