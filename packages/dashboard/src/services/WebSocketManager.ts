@@ -61,6 +61,47 @@ export class WebSocketManager {
 
   constructor(url?: string) {
     this.url = url ?? import.meta.env.VITE_WS_URL ?? '';
+    // Reconnect immediately when the tab regains focus or the network returns.
+    // Backgrounded tabs get their socket suspended and their reconnect timers
+    // throttled, so without this the UI can sit on "Reconnecting" until a
+    // manual reload.
+    if (typeof document !== 'undefined') {
+      document.addEventListener('visibilitychange', this.handleVisibility);
+    }
+    if (typeof window !== 'undefined') {
+      window.addEventListener('online', this.handleOnline);
+    }
+  }
+
+  private handleVisibility = (): void => {
+    if (document.visibilityState === 'visible') this.wakeReconnect();
+  };
+
+  private handleOnline = (): void => {
+    this.wakeReconnect();
+  };
+
+  /** Force an immediate, fresh reconnect if we're not connected. Resets the
+   *  backoff so a returning user doesn't wait out a 30s timer. */
+  private wakeReconnect(): void {
+    if (this.manualDisconnect) return;
+    if (this.socket?.connected) return;
+    this.reconnectDelay = INITIAL_RECONNECT_DELAY;
+    this.clearReconnectTimer();
+    this.recreateAndConnect();
+  }
+
+  /** Tear down the old socket and build a new one. A new socket re-reads the
+   *  auth token from localStorage at creation, so reconnects pick up a token
+   *  that was refreshed while the tab was inactive — reusing the old socket
+   *  would keep retrying with the stale token and loop forever. */
+  private recreateAndConnect(): void {
+    if (this.socket) {
+      this.socket.removeAllListeners();
+      this.socket.disconnect();
+      this.socket = null;
+    }
+    this.connect();
   }
 
   connect(): void {
@@ -254,7 +295,9 @@ export class WebSocketManager {
         this.reconnectDelay * BACKOFF_MULTIPLIER,
         MAX_RECONNECT_DELAY,
       );
-      this.socket?.connect();
+      // Rebuild the socket so it re-reads a possibly-refreshed auth token.
+      // (Reusing this.socket kept retrying with the token baked in at creation.)
+      this.recreateAndConnect();
     }, this.reconnectDelay);
   }
 
