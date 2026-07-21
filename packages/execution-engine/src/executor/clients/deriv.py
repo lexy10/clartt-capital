@@ -48,13 +48,7 @@ class DerivSyntheticClient:
     provider = BrokerProvider.DERIV
 
     # Default contract parameters
-    # Deriv requires symbol-specific multiplier values. Common ranges:
-    # - R_10:   100, 200, 300, 400, 500
-    # - R_25:   160, 400, 800, 1200, 1600
-    # - R_50:   100, 200, 300, 400, 500
-    # - R_75:   100, 150, 200, 250, 300
-    # - R_100:  100, 200, 300, 400, 500
-    # 400 works for R_10, R_25, R_50, R_100.
+    # Deriv requires symbol-specific multiplier values (the leverage).
     DEFAULT_MULTIPLIER = 400
     SYMBOL_MULTIPLIER: dict[str, int] = {
         "R_10":  400,
@@ -63,6 +57,23 @@ class DerivSyntheticClient:
         "R_75":  150,
         "R_100": 400,
     }
+    # Full set of multipliers Deriv accepts per symbol, ascending. We pick the
+    # largest that keeps the strategy's stop-loss WITHIN the stake — a multiplier
+    # contract can never lose more than its stake, so Deriv rejects any
+    # stop_loss whose USD value exceeds the stake ("Enter an amount equal to or
+    # lower than <stake>"). The stop fits only when multiplier * (sl_distance /
+    # price) <= 1, which is independent of the stake size — the multiplier is the
+    # only lever. Smaller multiplier => wider stop allowed.
+    ALLOWED_MULTIPLIERS: dict[str, list[int]] = {
+        "R_10":  [100, 200, 300, 400, 500],
+        "R_25":  [160, 400, 800, 1200, 1600],
+        "R_50":  [100, 200, 300, 400, 500],
+        "R_75":  [100, 150, 200, 250, 300],
+        "R_100": [100, 200, 300, 400, 500],
+    }
+    # Keep the broker stop-loss this fraction below the stake so Deriv's own
+    # commission deduction can't tip it over the limit.
+    SL_STAKE_SAFETY = 0.9
     REQUEST_TIMEOUT = 30      # seconds
 
     def __init__(
@@ -276,6 +287,31 @@ class DerivSyntheticClient:
         stake = round(position_size * self.LOT_TO_STAKE_FACTOR, 2)
         return max(stake, self.MIN_STAKE_USD)
 
+    def _select_multiplier(self, instrument: str, price: float, sl: float) -> int:
+        """Pick the largest allowed multiplier that keeps the stop-loss inside
+        the stake.
+
+        A multiplier contract auto-closes at a 100%-of-stake loss, so the
+        strategy's stop only takes effect when it is TIGHTER than that auto
+        stop-out — i.e. when multiplier * (sl_distance / price) <= 1. We pick the
+        largest allowed multiplier satisfying that (with a safety margin) to keep
+        capital efficiency high while letting Deriv accept the stop. If the stop
+        is so wide that even the smallest multiplier can't contain it, we return
+        the smallest (the auto stop-out then protects the position and the stop
+        is clamped to the stake in _async_send_order).
+        """
+        allowed = sorted(self.ALLOWED_MULTIPLIERS.get(instrument, [])) or [
+            self.SYMBOL_MULTIPLIER.get(instrument, self._default_multiplier)
+        ]
+        if not (price and price > 0 and sl and sl > 0):
+            return allowed[0]
+        sl_ratio = abs(price - sl) / price
+        if sl_ratio <= 0:
+            return allowed[-1]
+        cap = self.SL_STAKE_SAFETY / sl_ratio
+        fits = [m for m in allowed if m <= cap]
+        return fits[-1] if fits else allowed[0]
+
     async def _async_send_order(
         self,
         instrument: str,
@@ -289,11 +325,12 @@ class DerivSyntheticClient:
 
         contract_type = "MULTUP" if direction == "BUY" else "MULTDOWN"
 
-        # Pick the symbol-specific multiplier (different per synthetic)
-        multiplier = self.SYMBOL_MULTIPLIER.get(instrument, self._default_multiplier)
-
         # Translate lots -> USD stake for Deriv multipliers
         stake = self._convert_volume_to_stake(volume)
+
+        # Pick the multiplier from the stop distance so the broker stop-loss
+        # stays within the stake (Deriv rejects a stop larger than the stake).
+        multiplier = self._select_multiplier(instrument, price, sl)
 
         # Build the buy parameters for a multiplier contract
         buy_params: dict = {
@@ -316,6 +353,13 @@ class DerivSyntheticClient:
             sl_distance = abs(price - sl)
             if sl_distance > 0:
                 stop_loss_usd = round(stake * (sl_distance / price) * multiplier, 2)
+                # Deriv caps the stop at the stake (max loss on a multiplier).
+                # If the strategy stop is wider than the auto stop-out even at the
+                # lowest multiplier, clamp so the order is accepted — the auto
+                # stop-out then enforces the same max loss.
+                max_sl = round(stake * self.SL_STAKE_SAFETY, 2)
+                if stop_loss_usd > max_sl:
+                    stop_loss_usd = max_sl
                 if stop_loss_usd > 0:
                     limit_order["stop_loss"] = stop_loss_usd
         if tp and tp > 0 and price > 0:
